@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<!-- Global site tag (gtag.js) - Google Analytics -->
+	<script async src="https://www.googletagmanager.com/gtag/js?id=UA-172833856-1"></script>
+	<script>
+	  window.dataLayer = window.dataLayer || [];
+	  function gtag(){dataLayer.push(arguments);}
+	  gtag('js', new Date());
+
+	  gtag('config', 'UA-172833856-1');
+	</script>
+
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width">
+	<title>repl.it</title>
+	<link href="style.css" rel="stylesheet" type="text/css" />
+	</script>
+	<script src="en2am.js">
+	</script>
+</head>
+ <div id="prjects">
+	 <a href="conwayGameOfLife.html">Conway's Gamel of Life </a>
+ </div>
+ <div id = "table">
+ </div>
+ <div id = "input"> 
+   <h4> Type your Amharic sentence in Eglish letters here </h4>
+   <textarea id="input-txtarea" rows="10" cols="80">
+   ^a'raasen baraase kaalaaqola^paa^pasku^n maan liyaaqola^paa^psa^n naw
+   </textarea>
+   </br>
+   <button onclick="geezify()" type="button">Geezify</button>
+ </div>
+ </br>
+ <div id="prev">
+
+ </div>
+ <div id = "output"> 
+
+ </div>
+<body>
+	<script>
+		  table = '<table> <tr id="tbl-header">ማውጫ</tr>';
+      col_cnt = 1;
+      tr = "<tr>";
+      for(var key in KEY_MAP) {              
+               if( col_cnt <= 7){
+                   tr += `<td><div class="am-letter">${KEY_MAP[key]}</div><div class="mapping">${key}</div></td>`;   
+                   col_cnt += 1;       
+               }
+               else {
+                 tr += "</tr>";
+                 table += tr;
+                 tr = "<tr>"; //reset
+                 col_cnt = 1;
+               }
+      }
+      table += "</table>";
+      div = document.getElementById("table")
+      div.innerHTML +=  table
+
+      var prev = "";
+
+      function checker(text) {
+             let checked = ""
+	      for(var i=0; i < text.length; i++) {
+		  // Checks if there is any ascii character in the amharic sentence.
+		      if(0 <= text[i].charCodeAt() && text[i].charCodeAt() <= 127) {
+		           checked += `<span style="color:red;">${text[i]}</span>`;
+		      } else {
+			 console.log(`DEBUG char check: is ok.`)
+		         checked  += text[i]
+		      }
+	      }
+            return checked;
+      }
+
+      function geezify() {
+        en_txt = document.getElementById("input-txtarea").value.trim()
+        console.log(`Input: ${en_txt}`)
+        geez_txt = to_geez(en_txt, KEY_MAP)
+        console.log(`Output: ${geez_txt}`)
+        div = document.getElementById("output")
+        divprev = document.getElementById("prev")
+	divprev.innerHTML = div.innerHTML;
+	div.innerHTML = checker(geez_txt);
+        div.innerHTML += "</br>"
+      }
+
+
+      function test() {
+      test_sent = ["yh ya^ityo^pyaa hzb dm'ts naw",
+                      "laam",
+      "^a'raasen baraase kaalaaqola^paa^pasku^n maan liyaaqola^paa^psa^n naw"]
+      for(i in test_sent){
+          console.log(`Input: ${test_sent[i]}`)
+          let output = to_geez(test_sent[i], KEY_MAP)
+          console.log(`Output: ${output}`)
+      }
+      }
+
+	</script>
+
+  <style>
+    table, tr,td {
+      border: none;
+      margin-right:50px;
+    }
+    
+    #table {
+      float: left;
+    }
+
+    #tbl-header {
+     
+    }
+
+    .am-letter {
+      font-weight: bold;
+      font-size: 30px;
+    }
+    #input {
+      margin-top: 10px;
+      width: 100%;
+    }
+    </style>
+</body>
+
+</html>
