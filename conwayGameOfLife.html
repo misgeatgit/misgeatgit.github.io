@@ -1,233 +1,255 @@
 <!DOCTYPE html>
 <html>
-<head>
-<meta charset="UTF-8" />
+  <head>
+    <meta charset="UTF-8" />
 
-<style id="webmakerstyle">
-#root {
- 
-}
+    <style id="webmakerstyle">
+      #root {
+      }
 
-#board {
-  float: left;
-}
+      #board {
+        float: left;
+      }
 
-.info-board {
-  background-color: yellow;
-  margin-left: 200px;
-}
+      .info-board {
+        background-color: yellow;
+        margin-left: 200px;
+      }
 
-
-
-.row {
- display: table-row;  
- /*border-bottom-color: black;
+      .row {
+        display: table-row;
+        /*border-bottom-color: black;
  border-bottom-style: solid;*/
-}
+      }
 
-#pattern-select {
-  padding: 5px;
-  margin: 5px;
-}
+      #pattern-select {
+        padding: 5px;
+        margin: 5px;
+      }
 
-.cell {
-  float: left;
-  width: 10px;
-  height: 10px;
-  /*background-color: coral;*/
-  /*border-left-color: black;
+      .cell {
+        float: left;
+        width: 10px;
+        height: 10px;
+        /*background-color: coral;*/
+        /*border-left-color: black;
   border-left-style: solid;*/
-  /*border-color: coral;
+        /*border-color: coral;
   border-style: solid;*/
-  
-}
-
-
-</style>
-</head>
-<body>
-
-  <div id="board">
-    
-  </div>
-  <div class="info-board">
-    <div class="info-board" id="counter">
-      Generation: <span id="gen-counter">0</span>
+      }
+    </style>
+  </head>
+  <body>
+    <div id="board"></div>
+    <div class="info-board">
+      <div class="info-board" id="counter">
+        Generation: <span id="gen-counter">0</span>
+      </div>
+      <div id="pattern-select">
+        Pattern:
+        <select
+          name="patterns"
+          id="patterns"
+          onchange="patternSelected()"
+        ></select>
+      </div>
+      <button id="start-pause" onclick="startPause()">start</button>
     </div>
-    <div id="pattern-select">Pattern: <select name="patterns" id="patterns" onchange="patternSelected()">
-     </select></div>
-    <button id="start-pause" onclick="startPause()">start</button>
- </div>
- 
-  
 
+    <script>
+      function makeGrid(row, col) {
+        var main = document.getElementById("board");
+        var rows = "";
+        for (var i = 0; i < row; i++) {
+          let cols = "";
+          for (var j = 0; j < col; j++) {
+            cols += `<div class="cell" style="background-color: coral" id="cell${i}${j}"></div>`;
+          }
+          rows += `<div class="row" id="row${i}">${cols}</div>`;
+        }
 
-<script>
-function makeGrid(row, col) {
-    var main = document.getElementById('board');
-    var rows = '';
-    for(var i = 0; i < row; i++) {
-      let cols = '';
-      for(var j = 0; j < col; j++) {
-        cols += `<div class="cell" style="background-color: coral" id="cell${i}${j}"></div>`
+        main.innerHTML = rows;
       }
-      rows += `<div class="row" id="row${i}">${cols}</div>`
-    }
-    
-    main.innerHTML = rows;
-}
 
-function initGrid(i, j) {
-  var index = document.getElementById('patterns').selectedIndex;
-  var option = document.getElementsByTagName('option');
-  initialPatterns[option[index]](i, j);
-}
-
-function setColor(i, j, color='black') {
-   //console.log(`Updating (${i},${j}) to ${color === 'black' ? 'alive' : 'dead'}`);
-   var cellStyle = document.getElementById(`cell${i}${j}`).style;
-   cellStyle.backgroundColor = color;
-}
-
-function getColor(i, j) {
-  var cellStyle = document.getElementById(`cell${i}${j}`).style;
-  //alert(`COLOR: ${cellStyle.backgroundColor}`)
-  return `${cellStyle.backgroundColor}`;
-}
-
-function liveNeighbors(i, j, rowSize, colSize) {
-  var count = 0;
-  var neighbors = [
-    [-1,-1], [-1,0],[-1,1],  
-    [0,-1], /*[0,0],*/ [0,1],
-    [1,-1], [1,0], [1,1]
-  ];
-  neighbors.forEach(point => {
-    var ic = i + point[0];
-    var jc = j + point[1];
-    if(0 <= ic && rowSize > ic  && 0 <= jc && colSize > jc) {
-      if(getColor(ic, jc) === 'black') {
-        count++;
+      function initGrid(i, j) {
+        var index = document.getElementById("patterns").selectedIndex;
+        var option = document.getElementsByTagName("option");
+        initialPatterns[option[index]](i, j);
       }
-    }
-  });
-  
-  return count;
-}
 
-function update(rows, cols) {
-  var alive = 'black';
-  var dead = 'coral';
-  toBeUpdated = [];
-  for(var i = 0; i < rows; i++) {
-    for(var j = 0; j < cols; j++) {
-      var count = liveNeighbors(i, j, rows, cols);
-      if(count < 2 && getColor(i, j) === alive) {
-        toBeUpdated.push({i:i, j:j, state:dead});
-      } else if(count > 3 && getColor(i, j) === alive) {
-        toBeUpdated.push({i:i, j:j, state:dead});
-      } else if(count === 3 && getColor(i, j) === dead) {
-        toBeUpdated.push({i:i, j:j, state:alive});
+      function setColor(i, j, color = "black") {
+        //console.log(`Updating (${i},${j}) to ${color === 'black' ? 'alive' : 'dead'}`);
+        var cellStyle = document.getElementById(`cell${i}${j}`).style;
+        cellStyle.backgroundColor = color;
       }
-    }
-  }
-  
-  toBeUpdated.forEach(state => {
-    setColor(state.i, state.j, state.state);
-  });
-}
 
-initialPatterns = {
-  glider : (i, j) => {
-    setColor(i,j);
-    setColor(i,j+1);
-    setColor(i,j+2);
-    setColor(i+1,j);
-    setColor(i+2,j+1);
-    
-  },
-  rpentomino : (i, j) => {
-     setColor(i,j);
-     setColor(i-1,j+1);
-     setColor(i,j+1);
-     setColor(i+1,j+1);
-     setColor(i-1,j+2);
-  },
-  random1 : (i,j) => {
-     setColor(i,j);
-     setColor(i+1,j);
-     setColor(i+2,j);
-     setColor(i+1,j+2);
-     setColor(i-4,j-4);
-     setColor(i-3,j-4);
-     setColor(i-3,j-3);
-     setColor(i-4,j-5);   
-  }
-};
+      function getColor(i, j) {
+        var cellStyle = document.getElementById(`cell${i}${j}`).style;
+        //alert(`COLOR: ${cellStyle.backgroundColor}`)
+        return `${cellStyle.backgroundColor}`;
+      }
 
-function fillPatternSelector() {
-  var selector = document.getElementById('patterns');
-  patterns = ''
-  Object.keys(initialPatterns).forEach((pattern)=>{
-   patterns += `<option value="${pattern}">${pattern}</option>`;
-  });
-  selector.innerHTML = patterns;
-}
+      function liveNeighbors(i, j, rowSize, colSize) {
+        var count = 0;
+        var neighbors = [
+          [-1, -1],
+          [-1, 0],
+          [-1, 1],
+          [0, -1],
+          /*[0,0],*/ [0, 1],
+          [1, -1],
+          [1, 0],
+          [1, 1],
+        ];
+        neighbors.forEach((point) => {
+          var ic = i + point[0];
+          var jc = j + point[1];
+          if (0 <= ic && rowSize > ic && 0 <= jc && colSize > jc) {
+            if (getColor(ic, jc) === "black") {
+              count++;
+            }
+          }
+        });
 
-function genUpdate() {
-  var counter = document.getElementById('gen-counter');
-  var count = parseInt(counter.innerHTML);
-  counter.innerHTML = `${count+1}`;
-}
+        return count;
+      }
 
-var ROW_SIZE = 50;
-var COL_SIZE = 50;
-makeGrid(ROW_SIZE, COL_SIZE);
-//initGrid(25,25);
-fillPatternSelector();
-initialPatterns.random1(25,25);
-//initialPatterns.glider(25,25);
+      function update(rows, cols) {
+        var alive = "black";
+        var dead = "coral";
+        toBeUpdated = [];
+        for (var i = 0; i < rows; i++) {
+          for (var j = 0; j < cols; j++) {
+            var count = liveNeighbors(i, j, rows, cols);
+            if (count < 2 && getColor(i, j) === alive) {
+              toBeUpdated.push({ i: i, j: j, state: dead });
+            } else if (count > 3 && getColor(i, j) === alive) {
+              toBeUpdated.push({ i: i, j: j, state: dead });
+            } else if (count === 3 && getColor(i, j) === dead) {
+              toBeUpdated.push({ i: i, j: j, state: alive });
+            }
+          }
+        }
 
+        toBeUpdated.forEach((state) => {
+          setColor(state.i, state.j, state.state);
+        });
+      }
 
-var start = false;
-function patternSelected() {
-    console.log(`Pattern Selected`);
-    document.getElementById('gen-counter').innerHTML = '0';
-    document.getElementById('start-pause').innerHTML = 'start';
-    start = false;
-    for(var i=0; i < ROW_SIZE; i++)
-      for(var j=0; j < COL_SIZE; j++)
-        setColor(i, j, 'coral');
-  
-    var selected = document.getElementById('patterns').value;
-    initialPatterns[selected](25,25);
-}
+      initialPatterns = {
+        glider: (i, j) => {
+          setColor(i, j);
+          setColor(i, j + 1);
+          setColor(i, j + 2);
+          setColor(i + 1, j);
+          setColor(i + 2, j + 1);
+        },
+        rpentomino: (i, j) => {
+          setColor(i, j);
+          setColor(i - 1, j + 1);
+          setColor(i, j + 1);
+          setColor(i + 1, j + 1);
+          setColor(i - 1, j + 2);
+        },
+        random1: (i, j) => {
+          setColor(i, j);
+          setColor(i + 1, j);
+          setColor(i + 2, j);
+          setColor(i + 1, j + 2);
+          setColor(i - 4, j - 4);
+          setColor(i - 3, j - 4);
+          setColor(i - 3, j - 3);
+          setColor(i - 4, j - 5);
+        },
+        acorn: (i, j) => {
+          setColor(i, j + 1);
+          setColor(i + 1, j + 3);
+          setColor(i + 2, j);
+          setColor(i + 2, j + 1);
+          setColor(i + 2, j + 4);
+          setColor(i + 2, j + 5);
+          setColor(i + 2, j + 6);
+        },
+        /*
+        beehive: (i, j) => {
+          setColor(i, j + 1);
+          setColor(i, j + 2);
+          setColor(i + 1, j);
+          setColor(i + 1, j + 3);
+          setColor(i + 2, j + 1);
+          setColor(i + 2, j + 2);
+        },
+        boat: (i, j) => {
+          setColor(i, j);
+          setColor(i, j + 1);
+          setColor(i + 1, j);
+          setColor(i + 1, j + 2);
+          setColor(i + 2, j + 1);
+        },
+        loat: (i, j) => {
+          setColor(i, j + 1);
+          setColor(i + 1, j);
+          setColor(i + 1, j + 2);
+          setColor(i + 2, j + 1);
+        },
+      */
+      };
 
-var interValId;
-function startPause() {
-  console.log('StartPause clicked');
-  var buttn = document.getElementById('start-pause');
-  if(!start) {
-     intervalId = setInterval(() => {
-              update(ROW_SIZE, COL_SIZE);
-              genUpdate();
-              start = true;
-              buttn.innerHTML = 'pause';
-              }, 300);
-  } else {
-    clearInterval(intervalId);
-    start = false;
-    buttn.innerHTML = 'start';
-  }
-}
+      function fillPatternSelector() {
+        var selector = document.getElementById("patterns");
+        patterns = "";
+        Object.keys(initialPatterns).forEach((pattern) => {
+          patterns += `<option value="${pattern}">${pattern}</option>`;
+        });
+        selector.innerHTML = patterns;
+      }
 
+      function genUpdate() {
+        var counter = document.getElementById("gen-counter");
+        var count = parseInt(counter.innerHTML);
+        counter.innerHTML = `${count + 1}`;
+      }
 
+      var ROW_SIZE = 50;
+      var COL_SIZE = 50;
+      makeGrid(ROW_SIZE, COL_SIZE);
+      //initGrid(25,25);
+      fillPatternSelector();
+      initialPatterns.random1(25, 25);
+      //initialPatterns.glider(25,25);
 
+      var start = false;
+      function patternSelected() {
+        console.log(`Pattern Selected`);
+        document.getElementById("gen-counter").innerHTML = "0";
+        document.getElementById("start-pause").innerHTML = "start";
+        start = false;
+        for (var i = 0; i < ROW_SIZE; i++)
+          for (var j = 0; j < COL_SIZE; j++) setColor(i, j, "coral");
 
+        var selected = document.getElementById("patterns").value;
+        initialPatterns[selected](25, 25);
+      }
 
+      var interValId;
+      function startPause() {
+        console.log("StartPause clicked");
+        var buttn = document.getElementById("start-pause");
+        if (!start) {
+          intervalId = setInterval(() => {
+            update(ROW_SIZE, COL_SIZE);
+            genUpdate();
+            start = true;
+            buttn.innerHTML = "pause";
+          }, 300);
+        } else {
+          clearInterval(intervalId);
+          start = false;
+          buttn.innerHTML = "start";
+        }
+      }
 
-
-//# sourceURL=userscript.js
-</script>
-</body>
+      //# sourceURL=userscript.js
+    </script>
+  </body>
 </html>
