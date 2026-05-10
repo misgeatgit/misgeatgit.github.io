@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2D Target Intake Tracker</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 0; background: #0f172a; color: #f8fafc; }
+        .wrapper { max-width: 900px; margin: 40px auto; padding: 20px; }
+        header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #334155; padding-bottom: 20px; }
+        .chart-container { background: #1e293b; border-radius: 12px; padding: 20px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+        #chart2d { height: 500px; }
+        .stats { color: #3b82f6; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="wrapper">
+    <header>
+        <h1>Daily Target Intake Logic</h1>
+        <p>Age 38 | Height 180cm | Moderately Active | <span class="stats">Goal: -1kg/Week</span></p>
+    </header>
+
+    <div class="chart-container">
+        <div id="chart2d"></div>
+    </div>
+</div>
+
+<script>
+    function calculateWeightLossPlan() {
+        let weights = [], maintenance = [], targets = [];
+        let currentWeight = 104;
+        
+        // Profile Constants
+        const age = 38;
+        const height = 180;
+        const activityFactor = 1.55;
+        const weeklyGoalKg = 1;
+        const kcalPerKg = 7700;
+
+        for (let week = 1; week <= 20; week++) {
+            // 1. Calculate BMR (Revised Harris-Benedict)
+            let bmr = 88.362 + (13.397 * currentWeight) + (4.799 * height) - (5.677 * age);
+            
+            // 2. Calculate TDEE (Maintenance)
+            let tdee = bmr * activityFactor;
+
+            // 3. Calculate Daily Deficit INSIDE the loop
+            let dailyDeficit = (weeklyGoalKg * kcalPerKg) / 7;
+
+            // 4. Set Target
+            let targetIntake = Math.round(tdee - dailyDeficit);
+
+            weights.push(currentWeight);
+            maintenance.push(Math.round(tdee));
+            targets.push(targetIntake);
+
+            // Subtract 1kg for the next week calculation
+            currentWeight -= weeklyGoalKg;
+        }
+        return { weights, maintenance, targets };
+    }
+
+    const data = calculateWeightLossPlan();
+
+    const traceTarget = {
+        x: data.weights,
+        y: data.targets,
+        mode: 'lines+markers',
+        name: 'Target Intake (Eat This)',
+        line: { color: '#f43f5e', width: 4, shape: 'spline' },
+        marker: { size: 10, color: '#f43f5e' }
+    };
+
+    const traceMaint = {
+        x: data.weights,
+        y: data.maintenance,
+        mode: 'lines',
+        name: 'Maintenance (TDEE)',
+        line: { color: '#475569', width: 2, dash: 'dot' }
+    };
+
+    const layout = {
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        font: { color: '#94a3b8' },
+        xaxis: { 
+            title: 'Current Weight (kg)', 
+            autorange: 'reverse', 
+            gridcolor: '#334155',
+            zeroline: false 
+        },
+        yaxis: { 
+            title: 'Daily Calories', 
+            gridcolor: '#334155',
+            zeroline: false 
+        },
+        legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: 1.1 },
+        margin: { t: 50, b: 50, l: 60, r: 20 }
+    };
+
+    Plotly.newPlot('chart2d', [traceMaint, traceTarget], layout);
+</script>
+</body>
+</html>
