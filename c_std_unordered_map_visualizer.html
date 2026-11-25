@@ -1,0 +1,1618 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>C++ std::unordered_map Visualizer</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        slate: {
+                            950: '#090d16',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Custom animations and developer-theme scrollbar styling */
+        body {
+            background-color: #090d16;
+            color: #e2e8f0;
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+
+        /* Subtle custom scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+
+        /* Node entrance animation */
+        @keyframes nodePopIn {
+            0% {
+                opacity: 0;
+                transform: scale(0.7) translateY(-10px);
+            }
+            65% {
+                opacity: 1;
+                transform: scale(1.06) translateY(0);
+            }
+            100% {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+
+        /* Node erase/exit animation */
+        @keyframes nodeEraseOut {
+            0% {
+                opacity: 1;
+                transform: scale(1);
+            }
+            40% {
+                opacity: 0.8;
+                transform: scale(1.08) translateY(-6px);
+            }
+            100% {
+                opacity: 0;
+                transform: scale(0.4) translateY(12px);
+            }
+        }
+
+        /* Update flash animation */
+        @keyframes amberFlash {
+            0%, 100% {
+                box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+            }
+            50% {
+                box-shadow: 0 0 22px 4px rgba(245, 158, 11, 0.55);
+            }
+        }
+
+        /* Shake animation for invalid input */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-5px); }
+            40%, 80% { transform: translateX(5px); }
+        }
+
+        .animate-node-in {
+            animation: nodePopIn 0.42s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+
+        .animate-node-out {
+            animation: nodeEraseOut 0.45s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+
+        .animate-amber-flash {
+            animation: amberFlash 0.65s ease-in-out 2;
+        }
+
+        .animate-shake {
+            animation: shake 0.35s ease-in-out;
+        }
+
+        /* Glowing states for hash pipeline & nodes */
+        .glow-cyan {
+            box-shadow: 0 0 18px rgba(6, 182, 212, 0.35);
+            border-color: #22d3ee !important;
+        }
+        .glow-emerald {
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+            border-color: #34d399 !important;
+        }
+        .glow-amber {
+            box-shadow: 0 0 20px rgba(245, 158, 11, 0.4);
+            border-color: #fbbf24 !important;
+        }
+        .glow-rose {
+            box-shadow: 0 0 20px rgba(244, 63, 94, 0.45);
+            border-color: #fb7185 !important;
+        }
+        .glow-purple {
+            box-shadow: 0 0 22px rgba(168, 85, 247, 0.45);
+            border-color: #c084fc !important;
+        }
+
+        /* Pointer arrow styling */
+        .arrow-connector {
+            transition: all 0.25s ease;
+        }
+        .arrow-bypass {
+            transform: scaleX(1.18);
+        }
+
+        /* Smooth transitions for nodes & buckets */
+        .hash-node {
+            transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease, background-color 0.25s ease;
+        }
+        .bucket-row {
+            transition: border-color 0.25s ease, background-color 0.25s ease, box-shadow 0.25s ease;
+        }
+
+        /* Floating iterator/status badge */
+        .floating-badge {
+            animation: nodePopIn 0.28s ease-out forwards;
+        }
+
+        /* Range input dark styling */
+        input[type="range"] {
+            accent-color: #22d3ee;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased selection:bg-cyan-500/30 selection:text-cyan-200">
+
+    <!-- ==================== TOP HEADER & CONTROL BAR ==================== -->
+    <header class="sticky top-0 z-30 bg-slate-950/90 backdrop-blur-md border-b border-slate-800/80 shadow-lg shadow-black/20">
+        <div class="max-w-[1440px] mx-auto px-4 py-3 space-y-3">
+            <!-- Title & Speed Row -->
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-cyan-500/20 to-blue-600/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 font-mono font-bold text-sm shadow-inner">
+                        {}
+                    </div>
+                    <div>
+                        <h1 class="text-base sm:text-lg font-bold tracking-tight text-slate-100 flex items-center gap-2">
+                            <span class="font-mono text-cyan-400">std::unordered_map</span>
+                            <span class="hidden sm:inline text-slate-400 font-normal text-sm">Interactive Visualizer</span>
+                        </h1>
+                        <p class="text-[11px] text-slate-400 font-mono hidden sm:block">
+                            Separate Chaining &bull; FNV-1a Hash &bull; Dynamic Rehashing
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Animation Speed Slider & Toast Status -->
+                <div class="flex items-center gap-4">
+                    <div id="inline-toast" class="hidden text-xs font-medium px-3 py-1.5 rounded-lg border transition-all"></div>
+                    <div class="flex items-center gap-2.5 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-lg">
+                        <span class="text-xs text-slate-400 font-medium">Speed:</span>
+                        <input id="speed-slider" type="range" min="1" max="3" step="1" value="2" class="w-20 sm:w-24 h-1.5 cursor-pointer">
+                        <span id="speed-label" class="text-xs font-mono text-cyan-400 w-12 text-right">Normal</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Controls Row: Inputs & Operation Buttons -->
+            <div class="flex flex-wrap items-center gap-2.5">
+                <!-- Key Input -->
+                <div id="key-input-wrap" class="flex items-center bg-slate-900 border border-slate-700/80 rounded-lg focus-within:border-cyan-500 focus-within:ring-1 focus-within:ring-cyan-500/40 transition-all overflow-hidden">
+                    <span class="px-2.5 py-2 text-xs font-mono text-slate-400 bg-slate-800/70 border-r border-slate-700/70 select-none">Key</span>
+                    <input id="key-input" type="text" placeholder='e.g. "apple"' maxlength="18"
+                        class="w-28 sm:w-36 bg-transparent px-2.5 py-1.5 text-sm font-mono text-slate-100 placeholder-slate-500 focus:outline-none">
+                </div>
+
+                <!-- Value Input -->
+                <div class="flex items-center bg-slate-900 border border-slate-700/80 rounded-lg focus-within:border-cyan-500 focus-within:ring-1 focus-within:ring-cyan-500/40 transition-all overflow-hidden">
+                    <span class="px-2.5 py-2 text-xs font-mono text-slate-400 bg-slate-800/70 border-r border-slate-700/70 select-none">Val</span>
+                    <input id="val-input" type="text" placeholder="42" maxlength="12"
+                        class="w-20 sm:w-24 bg-transparent px-2.5 py-1.5 text-sm font-mono text-slate-100 placeholder-slate-500 focus:outline-none">
+                </div>
+
+                <!-- Primary Operation Buttons -->
+                <div class="flex flex-wrap items-center gap-2">
+                    <button id="btn-insert" class="op-btn px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white shadow-sm shadow-emerald-950/50 transition-all flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                        Insert / Update
+                    </button>
+
+                    <button id="btn-find" class="op-btn px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold bg-cyan-600 hover:bg-cyan-500 active:scale-[0.98] text-white shadow-sm shadow-cyan-950/50 transition-all flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"/></svg>
+                        Find
+                    </button>
+
+                    <button id="btn-erase" class="op-btn px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold bg-rose-600 hover:bg-rose-500 active:scale-[0.98] text-white shadow-sm shadow-rose-950/50 transition-all flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                        Erase
+                    </button>
+                </div>
+
+                <!-- Divider -->
+                <div class="hidden xl:block h-6 w-px bg-slate-800 mx-1"></div>
+
+                <!-- Rehash Action Buttons -->
+                <div class="flex flex-wrap items-center gap-2">
+                    <button id="btn-cause-rehash" class="op-btn px-3.5 py-2 rounded-lg text-xs sm:text-sm font-bold bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 active:scale-[0.98] text-slate-950 shadow-md shadow-orange-950/50 border border-amber-300/40 transition-all flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
+                        <span>⚡</span> Cause Rehash
+                    </button>
+
+                    <button id="btn-rehash-2x" class="op-btn px-3 py-2 rounded-lg text-xs font-mono font-semibold bg-purple-600/20 hover:bg-purple-600/35 text-purple-300 border border-purple-500/40 active:scale-[0.98] transition-all disabled:opacity-40 disabled:cursor-not-allowed" title="Explicitly call umap.rehash(bucket_count * 2)">
+                        rehash(2x)
+                    </button>
+                </div>
+
+                <!-- Utility Buttons -->
+                <div class="flex flex-wrap items-center gap-2 ml-auto sm:ml-0">
+                    <button id="btn-collision" class="op-btn px-3 py-2 rounded-lg text-xs font-medium bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 active:scale-[0.98] transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                        Load Collision Demo
+                    </button>
+                    <button id="btn-random" class="op-btn px-3 py-2 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 active:scale-[0.98] transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                        🎲 Random Insert
+                    </button>
+                    <button id="btn-clear" class="px-3 py-2 rounded-lg text-xs font-medium bg-slate-900 hover:bg-rose-950/60 text-slate-300 hover:text-rose-200 border border-slate-700 hover:border-rose-500/40 active:scale-[0.98] transition-all">
+                        Clear
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- ==================== MAIN CONTENT CONTAINER ==================== -->
+    <main class="flex-1 max-w-[1440px] w-full mx-auto px-4 py-4 space-y-4">
+
+        <!-- ==================== LIVE C++ STATS BAR ==================== -->
+        <section id="stats-bar" class="grid grid-cols-2 md:grid-cols-5 gap-3 bg-slate-900/70 border border-slate-800/90 rounded-xl p-3 transition-all">
+            <!-- size() -->
+            <div class="bg-slate-950/70 border border-slate-800/80 rounded-lg px-3 py-2 flex flex-col justify-between">
+                <span class="text-[11px] font-mono text-slate-400">umap.size()</span>
+                <span id="stat-size" class="text-lg font-mono font-bold text-slate-100 mt-0.5">0</span>
+            </div>
+
+            <!-- bucket_count() -->
+            <div id="stat-bucket-card" class="bg-slate-950/70 border border-slate-800/80 rounded-lg px-3 py-2 flex flex-col justify-between transition-all">
+                <span class="text-[11px] font-mono text-slate-400">umap.bucket_count()</span>
+                <span id="stat-buckets" class="text-lg font-mono font-bold text-cyan-400 mt-0.5">8</span>
+            </div>
+
+            <!-- load_factor() with Progress Bar -->
+            <div class="bg-slate-950/70 border border-slate-800/80 rounded-lg px-3 py-2 flex flex-col justify-between col-span-2 md:col-span-1">
+                <div class="flex items-center justify-between">
+                    <span class="text-[11px] font-mono text-slate-400">load_factor()</span>
+                    <span id="stat-load" class="text-xs font-mono font-bold text-emerald-400">0.00</span>
+                </div>
+                <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden mt-2">
+                    <div id="load-bar" class="h-full bg-emerald-500 rounded-full transition-all duration-500" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <!-- max_load_factor() -->
+            <div class="bg-slate-950/70 border border-slate-800/80 rounded-lg px-3 py-2 flex flex-col justify-between">
+                <span class="text-[11px] font-mono text-slate-400">max_load_factor()</span>
+                <span id="stat-max-load" class="text-lg font-mono font-bold text-slate-300 mt-0.5">1.00</span>
+            </div>
+
+            <!-- Complexity Badge -->
+            <div id="complexity-card" class="bg-slate-950/70 border border-slate-800/80 rounded-lg px-3 py-2 flex flex-col justify-between col-span-2 md:col-span-1 transition-all">
+                <span class="text-[11px] font-mono text-slate-400">Time Complexity</span>
+                <span id="complexity-badge" class="text-xs font-mono font-semibold text-cyan-300 mt-1">
+                    Avg: O(1) | Worst: O(N)
+                </span>
+            </div>
+        </section>
+
+        <!-- ==================== HASH FUNCTION PIPELINE VISUALIZER ==================== -->
+        <section class="bg-slate-900/70 border border-slate-800/90 rounded-xl p-3.5">
+            <div class="flex items-center justify-between mb-2.5">
+                <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+                    Hash Function Pipeline
+                </h2>
+                <span id="pipeline-status" class="text-xs font-mono text-slate-500">Idle — waiting for operation</span>
+            </div>
+
+            <div class="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5">
+                <!-- Stage 1: Input Key -->
+                <div id="pipe-stage-1" class="flex-1 bg-slate-950/80 border border-slate-800 rounded-lg px-3.5 py-2.5 transition-all">
+                    <div class="text-[10px] font-mono uppercase tracking-wider text-slate-500">1. Input Key</div>
+                    <div id="pipe-key" class="font-mono text-sm font-semibold text-slate-300 mt-0.5 truncate">—</div>
+                </div>
+
+                <!-- Arrow 1 -->
+                <div id="pipe-arrow-1" class="flex items-center justify-center text-slate-600 transition-colors py-0.5 md:py-0">
+                    <svg class="w-5 h-5 rotate-90 md:rotate-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+                </div>
+
+                <!-- Stage 2: std::hash<std::string> -->
+                <div id="pipe-stage-2" class="flex-[1.5] bg-slate-950/80 border border-slate-800 rounded-lg px-3.5 py-2.5 transition-all">
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="text-[10px] font-mono uppercase tracking-wider text-slate-500">2. std::hash&lt;std::string&gt;{}(key)</span>
+                        <span id="pipe-hash-badge" class="hidden text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">UNCHANGED</span>
+                    </div>
+                    <div id="pipe-hash" class="font-mono text-xs sm:text-sm font-semibold text-slate-300 mt-0.5 truncate">—</div>
+                </div>
+
+                <!-- Arrow 2 -->
+                <div id="pipe-arrow-2" class="flex items-center justify-center text-slate-600 transition-colors py-0.5 md:py-0">
+                    <svg class="w-5 h-5 rotate-90 md:rotate-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+                </div>
+
+                <!-- Stage 3: Modulo Bucket Index -->
+                <div id="pipe-stage-3" class="flex-[1.4] bg-slate-950/80 border border-slate-800 rounded-lg px-3.5 py-2.5 transition-all">
+                    <div class="flex items-center justify-between gap-2">
+                        <span id="pipe-stage-3-label" class="text-[10px] font-mono uppercase tracking-wider text-slate-500">3. hash % bucket_count</span>
+                        <span id="pipe-mod-badge" class="hidden text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-purple-500/25 text-purple-200 border border-purple-400/40">NEW MODULO</span>
+                    </div>
+                    <div id="pipe-bucket" class="font-mono text-xs sm:text-sm font-semibold text-slate-300 mt-0.5 truncate">—</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== MAIN WORKSPACE: BUCKETS & CODE/LOG PANEL ==================== -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+
+            <!-- LEFT / CENTER: HASH TABLE & SEPARATE CHAINING CANVAS (8 cols) -->
+            <section class="lg:col-span-8 bg-slate-900/70 border border-slate-800/90 rounded-xl p-4 flex flex-col">
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-3 pb-2.5 border-b border-slate-800/80">
+                    <div class="flex items-center gap-2">
+                        <h2 class="text-sm font-semibold text-slate-200">Bucket Array &amp; Separate Chaining</h2>
+                        <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700/70">
+                            std::pair&lt;const string, Val&gt;
+                        </span>
+                    </div>
+                    <div class="flex items-center gap-3 text-[11px] text-slate-400">
+                        <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-cyan-400"></span>Traverse</span>
+                        <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-400"></span>Found/New</span>
+                        <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-400"></span>Collision/Update</span>
+                        <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-rose-400"></span>Erase/Miss</span>
+                        <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-purple-400"></span>Rehash</span>
+                    </div>
+                </div>
+
+                <!-- Rehash Banner (hidden unless rehashing) -->
+                <div id="rehash-banner" class="hidden mb-3 p-3.5 rounded-xl bg-purple-500/15 border border-purple-500/50 text-purple-100 text-xs font-mono space-y-2 glow-purple">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span id="rehash-banner-title" class="font-bold text-purple-200 flex items-center gap-1.5">
+                            <span class="inline-block w-2 h-2 rounded-full bg-purple-400 animate-ping"></span>
+                            REHASH TRIGGERED
+                        </span>
+                        <span class="px-2 py-0.5 rounded bg-purple-500/30 text-purple-100 font-semibold">O(N) Migration</span>
+                    </div>
+                    <p id="rehash-banner-text" class="text-purple-200/90 leading-relaxed"></p>
+                    <div class="flex flex-wrap items-center gap-2 pt-1 border-t border-purple-500/25 text-[11px]">
+                        <span class="px-2 py-0.5 rounded bg-rose-500/20 text-rose-200 border border-rose-500/30">⚠ Iterators Invalidated</span>
+                        <span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-200 border border-emerald-500/30">✓ Node References &amp; Pointers Remain Valid</span>
+                    </div>
+                </div>
+
+                <!-- Rehash Migration Queue Strip (visible during node-by-node migration) -->
+                <div id="migration-tray" class="hidden mb-3 p-3 rounded-xl bg-slate-950/90 border border-purple-500/30 space-y-2">
+                    <div class="flex items-center justify-between text-[11px] font-mono">
+                        <span class="text-purple-300 font-semibold">Nodes Pending Migration (Old Buckets &rarr; New Buckets)</span>
+                        <span id="migration-counter" class="text-slate-400">0 remaining</span>
+                    </div>
+                    <div id="migration-list" class="flex flex-wrap gap-2"></div>
+                </div>
+
+                <!-- Buckets List Container -->
+                <div id="buckets-container" class="space-y-2.5">
+                    <!-- Dynamically rendered bucket rows -->
+                </div>
+
+                <p class="mt-3 text-[11px] text-slate-500 text-right font-mono">
+                    Tip: Click any node to populate the Key &amp; Val inputs for quick Find, Update, or Erase.
+                </p>
+            </section>
+
+            <!-- RIGHT: C++ CODE & STEP-BY-STEP NARRATION PANEL (4 cols) -->
+            <aside class="lg:col-span-4 space-y-4 lg:sticky lg:top-[128px]">
+
+                <!-- Equivalent C++ Code Card -->
+                <div class="bg-slate-900/70 border border-slate-800/90 rounded-xl overflow-hidden">
+                    <div class="px-3.5 py-2.5 bg-slate-950/60 border-b border-slate-800/80 flex items-center justify-between">
+                        <span class="text-xs font-semibold text-slate-300 flex items-center gap-2">
+                            <span class="font-mono text-cyan-400">&lt;/&gt;</span> Equivalent C++ Code
+                        </span>
+                        <span class="text-[10px] font-mono text-slate-500">C++17 / STL</span>
+                    </div>
+                    <pre id="cpp-code-block" class="p-3.5 text-xs font-mono leading-relaxed text-slate-300 overflow-x-auto bg-slate-950/40"><code><span class="text-slate-500">// Initialize unordered_map</span>
+<span class="text-purple-400">std::unordered_map</span>&lt;<span class="text-cyan-300">std::string</span>, <span class="text-cyan-300">std::string</span>&gt; umap;
+<span class="text-slate-500">// Select an operation above to animate!</span></code></pre>
+                </div>
+
+                <!-- Step-by-Step Narration Log Card -->
+                <div class="bg-slate-900/70 border border-slate-800/90 rounded-xl overflow-hidden flex flex-col">
+                    <div class="px-3.5 py-2.5 bg-slate-950/60 border-b border-slate-800/80 flex items-center justify-between">
+                        <span class="text-xs font-semibold text-slate-300 flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                            Step-by-Step Narration
+                        </span>
+                        <button id="btn-clear-log" class="text-[10px] font-mono text-slate-500 hover:text-slate-300 transition-colors">
+                            Clear Log
+                        </button>
+                    </div>
+                    <div id="narration-log" class="p-3 space-y-2 max-h-[380px] overflow-y-auto text-xs font-sans">
+                        <!-- Dynamically appended narration items -->
+                    </div>
+                </div>
+
+            </aside>
+        </div>
+    </main>
+
+    <!-- ==================== APPLICATION LOGIC ==================== -->
+    <script>
+        /**
+         * C++ std::unordered_map Interactive Visualizer
+         * Implements deterministic 32-bit FNV-1a hashing, separate chaining,
+         * step-by-step animated insert/find/erase, and automatic/explicit rehashing.
+         */
+
+        // ==================== STATE ====================
+        const INITIAL_BUCKETS = 8;
+        const MAX_LOAD_FACTOR = 1.0;
+        const MAX_VISUAL_BUCKETS = 32; // Keep UI readable after multiple doublings
+
+        let bucketCount = INITIAL_BUCKETS;
+        let buckets = Array.from({ length: bucketCount }, () => []);
+        let mapSize = 0;
+        let isAnimating = false;
+        let nextNodeId = 1;
+        let stepCounter = 0;
+        let animationToken = 0; // Incremented on Clear to safely cancel in-flight animations
+        let toastTimer = null;
+
+        // Speed presets (ms per animation step)
+        const SPEED_PRESETS = {
+            1: { label: 'Slow',   step: 950, short: 520, rehash: 460 },
+            2: { label: 'Normal', step: 560, short: 320, rehash: 280 },
+            3: { label: 'Fast',   step: 260, short: 150, rehash: 130 }
+        };
+
+        const SAMPLE_KEYS = [
+            'alpha', 'beta', 'gamma', 'delta', 'theta', 'lambda', 'omega', 'sigma',
+            'vector', 'deque', 'stack', 'queue', 'graph', 'tree', 'heap', 'trie',
+            'clang', 'gcc', 'cmake', 'stl', 'mutex', 'thread', 'async', 'tuple'
+        ];
+
+        // ==================== DOM REFERENCES ====================
+        const keyInputWrap = document.getElementById('key-input-wrap');
+        const keyInput = document.getElementById('key-input');
+        const valInput = document.getElementById('val-input');
+        const speedSlider = document.getElementById('speed-slider');
+        const speedLabel = document.getElementById('speed-label');
+        const inlineToast = document.getElementById('inline-toast');
+
+        const btnInsert = document.getElementById('btn-insert');
+        const btnFind = document.getElementById('btn-find');
+        const btnErase = document.getElementById('btn-erase');
+        const btnCauseRehash = document.getElementById('btn-cause-rehash');
+        const btnRehash2x = document.getElementById('btn-rehash-2x');
+        const btnCollision = document.getElementById('btn-collision');
+        const btnRandom = document.getElementById('btn-random');
+        const btnClear = document.getElementById('btn-clear');
+        const btnClearLog = document.getElementById('btn-clear-log');
+        const opButtons = document.querySelectorAll('.op-btn');
+
+        const statSize = document.getElementById('stat-size');
+        const statBuckets = document.getElementById('stat-buckets');
+        const statBucketCard = document.getElementById('stat-bucket-card');
+        const statLoad = document.getElementById('stat-load');
+        const loadBar = document.getElementById('load-bar');
+        const complexityCard = document.getElementById('complexity-card');
+        const complexityBadge = document.getElementById('complexity-badge');
+
+        const pipeStage1 = document.getElementById('pipe-stage-1');
+        const pipeStage2 = document.getElementById('pipe-stage-2');
+        const pipeStage3 = document.getElementById('pipe-stage-3');
+        const pipeArrow1 = document.getElementById('pipe-arrow-1');
+        const pipeArrow2 = document.getElementById('pipe-arrow-2');
+        const pipeKey = document.getElementById('pipe-key');
+        const pipeHash = document.getElementById('pipe-hash');
+        const pipeHashBadge = document.getElementById('pipe-hash-badge');
+        const pipeBucket = document.getElementById('pipe-bucket');
+        const pipeStage3Label = document.getElementById('pipe-stage-3-label');
+        const pipeModBadge = document.getElementById('pipe-mod-badge');
+        const pipelineStatus = document.getElementById('pipeline-status');
+
+        const bucketsContainer = document.getElementById('buckets-container');
+        const rehashBanner = document.getElementById('rehash-banner');
+        const rehashBannerTitle = document.getElementById('rehash-banner-title');
+        const rehashBannerText = document.getElementById('rehash-banner-text');
+        const migrationTray = document.getElementById('migration-tray');
+        const migrationCounter = document.getElementById('migration-counter');
+        const migrationList = document.getElementById('migration-list');
+        const cppCodeBlock = document.getElementById('cpp-code-block');
+        const narrationLog = document.getElementById('narration-log');
+
+        // ==================== HASH & UTILITY FUNCTIONS ====================
+        /**
+         * Deterministic 32-bit FNV-1a hash simulating std::hash<std::string>.
+         */
+        function stdHashString(str) {
+            let hash = 0x811c9dc5;
+            for (let i = 0; i < str.length; i++) {
+                hash ^= str.charCodeAt(i);
+                hash = Math.imul(hash, 0x01000193);
+            }
+            return hash >>> 0;
+        }
+
+        function generateAddr(id) {
+            const addrNum = (0x7ff000 + id * 0x28).toString(16);
+            return '0x' + addrNum;
+        }
+
+        function getDelay(type = 'step') {
+            const preset = SPEED_PRESETS[speedSlider.value] || SPEED_PRESETS[2];
+            return preset[type] || preset.step;
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        function isCancelled(token) {
+            return token !== animationToken;
+        }
+
+        function formatHashHex(hashVal) {
+            return '0x' + (hashVal >>> 0).toString(16).padStart(8, '0');
+        }
+
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function setAnimating(state) {
+            isAnimating = state;
+            opButtons.forEach(btn => {
+                btn.disabled = state;
+            });
+        }
+
+        function showToast(message, tone = 'amber') {
+            const styles = {
+                amber: 'bg-amber-500/15 text-amber-200 border-amber-500/40',
+                rose: 'bg-rose-500/15 text-rose-200 border-rose-500/40',
+                cyan: 'bg-cyan-500/15 text-cyan-200 border-cyan-500/40',
+                emerald: 'bg-emerald-500/15 text-emerald-200 border-emerald-500/40'
+            };
+            inlineToast.textContent = message;
+            inlineToast.className = `text-xs font-medium px-3 py-1.5 rounded-lg border transition-all ${styles[tone] || styles.amber}`;
+            inlineToast.classList.remove('hidden');
+
+            if (toastTimer) clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => {
+                inlineToast.classList.add('hidden');
+            }, 3400);
+        }
+
+        function setCppCode(html) {
+            cppCodeBlock.innerHTML = `<code>${html}</code>`;
+        }
+
+        function addLog(htmlMessage, tone = 'slate') {
+            stepCounter++;
+            const dotColors = {
+                cyan: 'bg-cyan-400',
+                emerald: 'bg-emerald-400',
+                amber: 'bg-amber-400',
+                rose: 'bg-rose-400',
+                purple: 'bg-purple-400',
+                slate: 'bg-slate-500'
+            };
+            const borderColors = {
+                cyan: 'border-cyan-500/25 bg-cyan-950/15',
+                emerald: 'border-emerald-500/25 bg-emerald-950/15',
+                amber: 'border-amber-500/25 bg-amber-950/15',
+                rose: 'border-rose-500/25 bg-rose-950/15',
+                purple: 'border-purple-500/30 bg-purple-950/20',
+                slate: 'border-slate-800 bg-slate-950/50'
+            };
+
+            const item = document.createElement('div');
+            item.className = `p-2.5 rounded-lg border ${borderColors[tone] || borderColors.slate} flex items-start gap-2 leading-relaxed`;
+            item.innerHTML = `
+                <span class="mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${dotColors[tone] || dotColors.slate}"></span>
+                <div class="text-slate-300 flex-1 min-w-0 break-words">
+                    <span class="text-[10px] font-mono text-slate-500 mr-1">#${stepCounter}</span>
+                    ${htmlMessage}
+                </div>
+            `;
+            narrationLog.appendChild(item);
+            narrationLog.scrollTop = narrationLog.scrollHeight;
+        }
+
+        function setComplexity(text, tone = 'cyan') {
+            complexityBadge.textContent = text;
+            complexityCard.classList.remove('glow-purple', 'glow-cyan');
+            if (tone === 'purple') {
+                complexityBadge.className = 'text-xs font-mono font-bold text-purple-300 mt-1';
+                complexityCard.classList.add('glow-purple');
+            } else {
+                complexityBadge.className = 'text-xs font-mono font-semibold text-cyan-300 mt-1';
+            }
+        }
+
+        // ==================== STATS & COMPLEXITY UPDATERS ====================
+        function updateStats(isRehashing = false) {
+            const lf = mapSize / bucketCount;
+            statSize.textContent = mapSize;
+            statBuckets.textContent = bucketCount;
+            statLoad.textContent = lf.toFixed(2);
+
+            const pct = Math.min(100, (lf / MAX_LOAD_FACTOR) * 100);
+            loadBar.style.width = `${pct}%`;
+
+            // Color code load factor bar: green -> amber -> red when > max_load_factor
+            loadBar.className = 'h-full rounded-full transition-all duration-500 ';
+            statLoad.className = 'text-xs font-mono font-bold ';
+
+            if (lf > MAX_LOAD_FACTOR) {
+                loadBar.classList.add('bg-rose-500');
+                statLoad.classList.add('text-rose-400');
+            } else if (isRehashing) {
+                loadBar.classList.add('bg-purple-500');
+                statLoad.classList.add('text-purple-400');
+            } else if (lf >= 0.75) {
+                loadBar.classList.add('bg-amber-500');
+                statLoad.classList.add('text-amber-400');
+            } else {
+                loadBar.classList.add('bg-emerald-500');
+                statLoad.classList.add('text-emerald-400');
+            }
+        }
+
+        // ==================== HASH PIPELINE ANIMATION ====================
+        function resetPipeline() {
+            [pipeStage1, pipeStage2, pipeStage3].forEach(el => {
+                el.classList.remove('glow-cyan', 'glow-purple', 'glow-emerald', 'bg-cyan-950/30', 'bg-purple-950/30', 'bg-emerald-950/20');
+            });
+            [pipeArrow1, pipeArrow2].forEach(el => {
+                el.classList.remove('text-cyan-400', 'text-purple-400');
+                el.classList.add('text-slate-600');
+            });
+            pipeHashBadge.classList.add('hidden');
+            pipeModBadge.classList.add('hidden');
+            pipeStage3Label.textContent = '3. hash % bucket_count';
+        }
+
+        async function animateHashPipeline(key, hashVal, bucketIdx, options = {}) {
+            const { mode = 'normal', oldBucketIdx = null, token = animationToken } = options;
+            const isRehash = mode === 'rehash';
+            const glowClass = isRehash ? 'glow-purple' : 'glow-cyan';
+            const bgClass = isRehash ? 'bg-purple-950/30' : 'bg-cyan-950/30';
+            const arrowClass = isRehash ? 'text-purple-400' : 'text-cyan-400';
+            const d = isRehash ? getDelay('rehash') : getDelay('short');
+            const hexStr = formatHashHex(hashVal);
+
+            resetPipeline();
+            if (isRehash) {
+                pipeStage3Label.textContent = '3. Old Bucket → New Bucket (% new_buckets)';
+            }
+
+            pipelineStatus.textContent = isRehash
+                ? `Rehashing "${key}" — hash unchanged, recomputing % ${bucketCount}`
+                : `Computing hash for "${key}"...`;
+            pipelineStatus.className = `text-xs font-mono ${isRehash ? 'text-purple-400' : 'text-cyan-400'}`;
+
+            // Stage 1: Input Key
+            pipeKey.innerHTML = `<span class="text-amber-300">"${escapeHtml(key)}"</span>`;
+            pipeHash.textContent = '...';
+            pipeBucket.textContent = '...';
+            pipeStage1.classList.add(glowClass, bgClass);
+            await sleep(d);
+            if (isCancelled(token)) return;
+
+            // Stage 2: std::hash (hex + decimal; marked UNCHANGED during rehash)
+            pipeArrow1.classList.remove('text-slate-600');
+            pipeArrow1.classList.add(arrowClass);
+            pipeHash.innerHTML = `<span class="${isRehash ? 'text-emerald-300' : 'text-cyan-300'}">${hexStr}</span> <span class="text-slate-500 text-[11px]">(${hashVal})</span>`;
+            if (isRehash) {
+                pipeHashBadge.classList.remove('hidden');
+                pipeStage2.classList.add('glow-emerald', 'bg-emerald-950/20');
+            } else {
+                pipeStage2.classList.add(glowClass, bgClass);
+            }
+            await sleep(d);
+            if (isCancelled(token)) return;
+
+            // Stage 3: Modulo (shows Old Bucket [i] -> New Bucket [j] during rehash)
+            pipeArrow2.classList.remove('text-slate-600');
+            pipeArrow2.classList.add(arrowClass);
+            if (isRehash && oldBucketIdx !== null) {
+                pipeModBadge.classList.remove('hidden');
+                const moved = oldBucketIdx !== bucketIdx;
+                pipeBucket.innerHTML = `
+                    <span class="text-slate-400">Old [${oldBucketIdx}]</span>
+                    <span class="text-purple-400 mx-1">&rarr;</span>
+                    <span class="px-1.5 py-0.5 rounded bg-purple-500/25 text-purple-200 font-bold">New [${bucketIdx}]</span>
+                    <span class="text-[10px] ml-1 ${moved ? 'text-amber-300' : 'text-slate-500'}">(% ${bucketCount})</span>
+                `;
+            } else {
+                pipeBucket.innerHTML = `${hashVal} % ${bucketCount} = <span class="px-1.5 py-0.5 rounded bg-cyan-500/25 text-cyan-200 font-bold">Bucket [${bucketIdx}]</span>`;
+            }
+            pipeStage3.classList.add(glowClass, bgClass);
+            await sleep(d);
+        }
+
+        // ==================== BUCKET & NODE RENDERING ====================
+        function createArrowSvg(id) {
+            const span = document.createElement('span');
+            if (id) span.id = id;
+            span.className = 'arrow-connector text-slate-600 shrink-0 flex items-center';
+            span.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>`;
+            return span;
+        }
+
+        function createNodeElement(node, animateIn = false) {
+            const wrapper = document.createElement('div');
+            wrapper.id = `node-wrap-${node.id}`;
+            wrapper.className = `flex items-center gap-1.5 shrink-0 ${animateIn ? 'animate-node-in' : ''}`;
+
+            const card = document.createElement('div');
+            card.id = `node-${node.id}`;
+            card.title = `Click to populate inputs | Heap addr: ${node.addr} | Hash: ${formatHashHex(node.hash)}`;
+            card.className = 'hash-node relative cursor-pointer bg-slate-900 border border-slate-700/90 hover:border-cyan-400/70 rounded-lg px-2.5 py-1.5 flex items-center gap-2 shadow-sm';
+            card.innerHTML = `
+                <div class="flex flex-col">
+                    <div class="flex items-center gap-1.5 font-mono text-xs">
+                        <span class="text-amber-300 font-semibold">"${escapeHtml(node.key)}"</span>
+                        <span class="text-slate-500">:</span>
+                        <span id="node-val-${node.id}" class="text-emerald-300 font-semibold">${escapeHtml(node.value)}</span>
+                    </div>
+                    <div class="text-[9px] font-mono text-slate-500 flex items-center gap-1.5 mt-0.5">
+                        <span>${node.addr}</span>
+                        <span>&bull;</span>
+                        <span>next*</span>
+                    </div>
+                </div>
+            `;
+
+            // Clicking a node populates inputs for quick Find / Update / Erase
+            card.addEventListener('click', () => {
+                if (isAnimating) return;
+                keyInput.value = node.key;
+                valInput.value = node.value;
+                keyInput.focus();
+                showToast(`Selected "${node.key}" (val: ${node.value})`, 'cyan');
+            });
+
+            wrapper.appendChild(card);
+            wrapper.appendChild(createArrowSvg(`arrow-after-${node.id}`));
+            return wrapper;
+        }
+
+        function renderBuckets() {
+            bucketsContainer.innerHTML = '';
+            for (let i = 0; i < bucketCount; i++) {
+                const row = document.createElement('div');
+                row.id = `bucket-row-${i}`;
+                row.className = 'bucket-row bg-slate-950/75 border border-slate-800/90 rounded-lg p-2 flex items-center gap-2 overflow-x-auto';
+
+                // Bucket index badge
+                const indexBox = document.createElement('div');
+                indexBox.className = 'shrink-0 w-16 sm:w-20 px-2 py-1.5 rounded-md bg-slate-900 border border-slate-700/80 text-center font-mono text-xs font-bold text-slate-300 select-none';
+                indexBox.textContent = `[${i}]`;
+
+                const headArrow = createArrowSvg(`bucket-head-arrow-${i}`);
+
+                // Linked list chain container
+                const chainDiv = document.createElement('div');
+                chainDiv.id = `bucket-chain-${i}`;
+                chainDiv.className = 'flex items-center gap-1.5 flex-nowrap py-1 min-h-[46px]';
+
+                for (const node of buckets[i]) {
+                    chainDiv.appendChild(createNodeElement(node, false));
+                }
+
+                // nullptr terminator
+                const nullBadge = document.createElement('span');
+                nullBadge.id = `bucket-null-${i}`;
+                nullBadge.className = 'relative shrink-0 px-2 py-1 rounded bg-slate-900/90 border border-slate-800 font-mono text-[11px] text-slate-500 select-none';
+                nullBadge.textContent = 'nullptr';
+
+                chainDiv.appendChild(nullBadge);
+
+                row.appendChild(indexBox);
+                row.appendChild(headArrow);
+                row.appendChild(chainDiv);
+                bucketsContainer.appendChild(row);
+            }
+        }
+
+        function clearAllHighlights() {
+            document.querySelectorAll('.bucket-row').forEach(el => {
+                el.classList.remove('glow-cyan', 'glow-purple', 'glow-amber', 'bg-cyan-950/20', 'bg-purple-950/20');
+            });
+            document.querySelectorAll('.hash-node').forEach(el => {
+                el.classList.remove('glow-cyan', 'glow-emerald', 'glow-amber', 'glow-rose', 'glow-purple', 'bg-cyan-950/40', 'bg-emerald-950/40', 'bg-emerald-950/30', 'bg-amber-950/40', 'bg-amber-950/30', 'bg-rose-950/40', 'scale-105', 'animate-amber-flash');
+            });
+            document.querySelectorAll('.arrow-connector').forEach(el => {
+                el.classList.remove('text-cyan-400', 'text-amber-400', 'text-emerald-400', 'text-purple-400', 'arrow-bypass');
+                el.classList.add('text-slate-600');
+            });
+            document.querySelectorAll('.floating-badge').forEach(el => el.remove());
+        }
+
+        function highlightBucket(idx, tone = 'cyan') {
+            const row = document.getElementById(`bucket-row-${idx}`);
+            if (!row) return;
+            if (tone === 'purple') {
+                row.classList.add('glow-purple', 'bg-purple-950/20');
+            } else {
+                row.classList.add('glow-cyan', 'bg-cyan-950/20');
+            }
+            row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function showNodeBadge(nodeId, text, tone = 'emerald') {
+            const nodeEl = document.getElementById(`node-${nodeId}`);
+            if (!nodeEl) return;
+            const existing = nodeEl.querySelector('.floating-badge');
+            if (existing) existing.remove();
+
+            const toneClasses = {
+                emerald: 'bg-emerald-500 text-slate-950',
+                amber: 'bg-amber-400 text-slate-950',
+                rose: 'bg-rose-500 text-white',
+                cyan: 'bg-cyan-400 text-slate-950'
+            };
+
+            const badge = document.createElement('span');
+            badge.className = `floating-badge absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap px-1.5 py-0.5 rounded text-[9px] font-mono font-bold shadow-md z-10 ${toneClasses[tone] || toneClasses.emerald}`;
+            badge.textContent = text;
+            nodeEl.appendChild(badge);
+        }
+
+        function showNullBadge(bucketIdx, text) {
+            const nullEl = document.getElementById(`bucket-null-${bucketIdx}`);
+            if (!nullEl) return;
+            const existing = nullEl.querySelector('.floating-badge');
+            if (existing) existing.remove();
+
+            const badge = document.createElement('span');
+            badge.className = 'floating-badge absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-rose-500 text-white shadow-md z-10';
+            badge.textContent = text;
+            nullEl.appendChild(badge);
+        }
+
+        // ==================== OPERATION 1: INSERT / UPDATE ====================
+        async function animateInsert(key, value, options = {}) {
+            const { nested = false, token = animationToken } = options;
+            if (!nested && isAnimating) return;
+            if (!nested) setAnimating(true);
+
+            clearAllHighlights();
+            setComplexity('Avg: O(1) | Worst: O(N)', 'cyan');
+
+            const valDisplay = isNaN(Number(value)) || value.trim() === '' ? `"${escapeHtml(value)}"` : escapeHtml(value);
+            setCppCode(
+`<span class="text-slate-500">// Insert or update key-value pair</span>
+umap[<span class="text-amber-300">"${escapeHtml(key)}"</span>] = <span class="text-emerald-300">${valDisplay}</span>;
+<span class="text-slate-500">// Or: umap.insert_or_assign("${escapeHtml(key)}", ${valDisplay});</span>`
+            );
+
+            const hashVal = stdHashString(key);
+            const bucketIdx = hashVal % bucketCount;
+
+            addLog(`<strong>INSERT</strong> <code class="font-mono text-amber-300">"${escapeHtml(key)}"</code> &rarr; <code class="font-mono text-emerald-300">${escapeHtml(value)}</code>`, 'cyan');
+
+            // Step 1: Hash Pipeline
+            await animateHashPipeline(key, hashVal, bucketIdx, { mode: 'normal', token });
+            if (isCancelled(token)) return;
+            addLog(`Computed <code class="font-mono text-cyan-300">hash("${escapeHtml(key)}") = ${formatHashHex(hashVal)}</code> &rarr; <code class="font-mono text-cyan-300">Bucket [${bucketIdx}]</code>`, 'cyan');
+
+            // Step 2: Highlight target bucket
+            highlightBucket(bucketIdx, 'cyan');
+            const headArrow = document.getElementById(`bucket-head-arrow-${bucketIdx}`);
+            if (headArrow) {
+                headArrow.classList.remove('text-slate-600');
+                headArrow.classList.add('text-cyan-400');
+            }
+            await sleep(getDelay('short'));
+            if (isCancelled(token)) return;
+
+            // Step 3: Traverse chain checking for duplicate key
+            const chain = buckets[bucketIdx];
+            if (chain.length > 0) {
+                addLog(`Bucket [${bucketIdx}] has ${chain.length} node(s). Traversing chain to check for duplicate key...`, 'amber');
+            }
+
+            for (let i = 0; i < chain.length; i++) {
+                const node = chain[i];
+                const nodeEl = document.getElementById(`node-${node.id}`);
+                nodeEl.classList.add('glow-cyan', 'bg-cyan-950/40', 'scale-105');
+                await sleep(getDelay('step'));
+                if (isCancelled(token)) return;
+
+                if (node.key === key) {
+                    // Duplicate found -> Update in place
+                    node.value = value;
+                    nodeEl.classList.remove('glow-cyan', 'bg-cyan-950/40');
+                    nodeEl.classList.add('glow-amber', 'bg-amber-950/40', 'animate-amber-flash');
+                    const valSpan = document.getElementById(`node-val-${node.id}`);
+                    if (valSpan) valSpan.textContent = value;
+                    showNodeBadge(node.id, 'Updated!', 'amber');
+
+                    addLog(`Key <code class="font-mono text-amber-300">"${escapeHtml(key)}"</code> already exists! Updated <code class="font-mono">node-&gt;second = ${escapeHtml(value)}</code>.`, 'amber');
+                    pipelineStatus.textContent = `Updated existing key "${key}" in Bucket [${bucketIdx}]`;
+                    pipelineStatus.className = 'text-xs font-mono text-amber-400';
+
+                    await sleep(getDelay('step') * 1.4);
+                    if (isCancelled(token)) return;
+                    nodeEl.classList.remove('animate-amber-flash', 'scale-105');
+                    if (!nested) setAnimating(false);
+                    return;
+                }
+
+                // Not a match, move to next pointer
+                nodeEl.classList.remove('glow-cyan', 'bg-cyan-950/40', 'scale-105');
+                const nextArrow = document.getElementById(`arrow-after-${node.id}`);
+                if (nextArrow) {
+                    nextArrow.classList.remove('text-slate-600');
+                    nextArrow.classList.add('text-cyan-400');
+                }
+                await sleep(getDelay('short') * 0.7);
+                if (isCancelled(token)) return;
+            }
+
+            // Step 4: Not a duplicate -> Create and append new node
+            const isCollision = chain.length > 0;
+            const newNode = {
+                id: nextNodeId++,
+                key,
+                value,
+                hash: hashVal,
+                addr: generateAddr(nextNodeId)
+            };
+            chain.push(newNode);
+            mapSize++;
+
+            const chainContainer = document.getElementById(`bucket-chain-${bucketIdx}`);
+            const nullBadge = document.getElementById(`bucket-null-${bucketIdx}`);
+            const newNodeEl = createNodeElement(newNode, true);
+            chainContainer.insertBefore(newNodeEl, nullBadge);
+
+            const innerNode = document.getElementById(`node-${newNode.id}`);
+            innerNode.classList.add(isCollision ? 'glow-amber' : 'glow-emerald', isCollision ? 'bg-amber-950/30' : 'bg-emerald-950/30');
+            showNodeBadge(newNode.id, isCollision ? 'Chained (Collision)' : 'Inserted!', isCollision ? 'amber' : 'emerald');
+
+            updateStats();
+            if (isCollision) {
+                addLog(`Hash collision in Bucket [${bucketIdx}]! Chained new node <code class="font-mono">{"${escapeHtml(key)}", ${escapeHtml(value)}}</code> via separate chaining.`, 'amber');
+            } else {
+                addLog(`Inserted new node <code class="font-mono">{"${escapeHtml(key)}", ${escapeHtml(value)}}</code> into Bucket [${bucketIdx}].`, 'emerald');
+            }
+            pipelineStatus.textContent = `Inserted "${key}" into Bucket [${bucketIdx}]`;
+            pipelineStatus.className = 'text-xs font-mono text-emerald-400';
+
+            await sleep(getDelay('step') * 1.2);
+            if (isCancelled(token)) return;
+
+            // Step 5: Check if automatic REHASH is required
+            if (mapSize / bucketCount > MAX_LOAD_FACTOR) {
+                if (bucketCount < MAX_VISUAL_BUCKETS) {
+                    await performRehash({ reason: 'load_factor', token });
+                } else {
+                    showToast(`Visual cap reached (${MAX_VISUAL_BUCKETS} buckets). Click Clear to reset.`, 'amber');
+                    addLog(`Load factor exceeded 1.00, but bucket visualization is capped at ${MAX_VISUAL_BUCKETS} buckets for readability. Click <strong>Clear</strong> to reset to 8 buckets.`, 'amber');
+                }
+            }
+
+            if (!nested && !isCancelled(token)) setAnimating(false);
+        }
+
+        // ==================== AUTOMATIC & EXPLICIT REHASH ANIMATION ====================
+        async function performRehash({ reason = 'load_factor', token = animationToken } = {}) {
+            const oldBucketCount = bucketCount;
+            const newBucketCount = Math.min(MAX_VISUAL_BUCKETS, bucketCount * 2);
+            const triggerLf = (mapSize / oldBucketCount).toFixed(2);
+            const isExplicit = reason === 'explicit';
+
+            setComplexity('Rehashing: O(N)', 'purple');
+            updateStats(true);
+            statBucketCard.classList.add('glow-purple');
+            rehashBanner.classList.remove('hidden');
+
+            if (isExplicit) {
+                rehashBannerTitle.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-purple-400 animate-ping"></span> EXPLICIT REHASH: umap.rehash(${newBucketCount})`;
+                rehashBannerText.textContent = `Explicitly doubling bucket_count() from ${oldBucketCount} → ${newBucketCount}. Existing hashes stay identical; each node's bucket is recomputed via hash % ${newBucketCount}.`;
+                setCppCode(
+`<span class="text-purple-400">// Explicit Rehash Called by User</span>
+umap.rehash(<span class="text-purple-300">${newBucketCount}</span>);
+<span class="text-slate-500">// All iterators invalidated; node pointers/refs stay valid!</span>
+<span class="text-slate-500">// Migrating ${mapSize} node(s): ${oldBucketCount} -> ${newBucketCount} buckets</span>`
+                );
+                addLog(`<strong>EXPLICIT REHASH!</strong> Called <code class="font-mono text-purple-300">umap.rehash(${newBucketCount})</code>. Doubling buckets ${oldBucketCount} &rarr; ${newBucketCount}. All iterators invalidated; node references remain valid.`, 'purple');
+            } else {
+                rehashBannerTitle.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-purple-400 animate-ping"></span> REHASH TRIGGERED (load_factor() ${triggerLf} &gt; max_load_factor() 1.00)`;
+                rehashBannerText.textContent = `size() (${mapSize}) / bucket_count() (${oldBucketCount}) = ${triggerLf} > 1.00. Allocating ${newBucketCount} buckets and migrating all ${mapSize} nodes one-by-one.`;
+                setCppCode(
+`<span class="text-purple-400">// Automatic Rehash Triggered!</span>
+<span class="text-slate-500">// load_factor() (${triggerLf}) &gt; max_load_factor() (1.00)</span>
+umap.rehash(<span class="text-purple-300">${newBucketCount}</span>);
+<span class="text-slate-500">// Iterators invalidated; node references stay valid!</span>`
+                );
+                addLog(`<strong>REHASH TRIGGERED!</strong> <code class="font-mono text-rose-300">load_factor() = ${triggerLf} &gt; 1.00</code>. Doubling <code class="font-mono">bucket_count()</code> from ${oldBucketCount} &rarr; ${newBucketCount}. Iterators invalidated; node references remain valid.`, 'purple');
+            }
+
+            await sleep(getDelay('step') * 1.4);
+            if (isCancelled(token)) return;
+
+            // Collect all existing nodes along with their old bucket index and whether they were in a collision chain
+            const pendingNodes = [];
+            for (let oldIdx = 0; oldIdx < buckets.length; oldIdx++) {
+                const hadCollision = buckets[oldIdx].length > 1;
+                for (const node of buckets[oldIdx]) {
+                    pendingNodes.push({ node, oldIdx, hadCollision });
+                }
+            }
+
+            // Populate visual Migration Queue Strip
+            migrationTray.classList.remove('hidden');
+            migrationList.innerHTML = '';
+            pendingNodes.forEach(({ node, oldIdx }) => {
+                const chip = document.createElement('div');
+                chip.id = `mig-chip-${node.id}`;
+                chip.className = 'px-2 py-1 rounded-md bg-slate-900 border border-slate-700 text-[11px] font-mono text-slate-300 flex items-center gap-1.5 transition-all';
+                chip.innerHTML = `<span class="text-slate-500">[${oldIdx}]</span><span class="text-amber-300">"${escapeHtml(node.key)}"</span>`;
+                migrationList.appendChild(chip);
+            });
+            migrationCounter.textContent = `${pendingNodes.length} remaining`;
+
+            // Allocate new empty bucket array
+            bucketCount = newBucketCount;
+            buckets = Array.from({ length: bucketCount }, () => []);
+            renderBuckets();
+            updateStats(true);
+
+            let remaining = pendingNodes.length;
+            let chainsSplit = 0;
+
+            // Migrate each node one-by-one from old buckets to new buckets
+            for (const { node, oldIdx, hadCollision } of pendingNodes) {
+                if (isCancelled(token)) return;
+                const newIdx = node.hash % bucketCount;
+
+                // Highlight chip in migration tray
+                const chip = document.getElementById(`mig-chip-${node.id}`);
+                if (chip) {
+                    chip.classList.add('border-purple-400', 'bg-purple-950/50', 'scale-105');
+                }
+
+                await animateHashPipeline(node.key, node.hash, newIdx, {
+                    mode: 'rehash',
+                    oldBucketIdx: oldIdx,
+                    token
+                });
+                if (isCancelled(token)) return;
+
+                clearAllHighlights();
+                highlightBucket(newIdx, 'purple');
+
+                buckets[newIdx].push(node);
+                const chainContainer = document.getElementById(`bucket-chain-${newIdx}`);
+                const nullBadge = document.getElementById(`bucket-null-${newIdx}`);
+                const nodeEl = createNodeElement(node, true);
+                chainContainer.insertBefore(nodeEl, nullBadge);
+
+                const innerNode = document.getElementById(`node-${node.id}`);
+                innerNode.classList.add('glow-purple');
+                const moved = oldIdx !== newIdx;
+                showNodeBadge(
+                    node.id,
+                    moved ? `Old [${oldIdx}] → New [${newIdx}]` : `Stayed in [${newIdx}]`,
+                    moved ? 'cyan' : 'emerald'
+                );
+
+                if (hadCollision && moved) {
+                    chainsSplit++;
+                }
+
+                // Remove migrated chip
+                if (chip) chip.remove();
+                remaining--;
+                migrationCounter.textContent = `${remaining} remaining`;
+
+                await sleep(getDelay('rehash'));
+            }
+
+            if (isCancelled(token)) return;
+
+            migrationTray.classList.add('hidden');
+            clearAllHighlights();
+            resetPipeline();
+            statBucketCard.classList.remove('glow-purple');
+            rehashBanner.classList.add('hidden');
+            updateStats(false);
+            setComplexity('Avg: O(1) | Worst: O(N)', 'cyan');
+            pipelineStatus.textContent = `Rehash complete — ${bucketCount} buckets active (load_factor: ${(mapSize / bucketCount).toFixed(2)})`;
+            pipelineStatus.className = 'text-xs font-mono text-purple-400';
+
+            const splitNote = chainsSplit > 0 ? ` Collision chains were visibly redistributed!` : '';
+            addLog(`Rehash complete! Migrated all ${mapSize} nodes across ${bucketCount} buckets (same heap addresses preserved). New <code class="font-mono text-emerald-300">load_factor() = ${(mapSize / bucketCount).toFixed(2)}</code>.${splitNote}`, 'purple');
+        }
+
+        // ==================== QUICK REHASH ACTIONS ====================
+        function quickInsertNode(key, value) {
+            const h = stdHashString(key);
+            const idx = h % bucketCount;
+            const node = {
+                id: nextNodeId++,
+                key,
+                value: String(value),
+                hash: h,
+                addr: generateAddr(nextNodeId)
+            };
+            buckets[idx].push(node);
+            mapSize++;
+            const chainContainer = document.getElementById(`bucket-chain-${idx}`);
+            const nullBadge = document.getElementById(`bucket-null-${idx}`);
+            if (chainContainer && nullBadge) {
+                chainContainer.insertBefore(createNodeElement(node, true), nullBadge);
+            }
+            updateStats();
+            return { node, idx };
+        }
+
+        function pickUnusedKeys(count) {
+            const existing = new Set();
+            buckets.forEach(b => b.forEach(n => existing.add(n.key)));
+            const pool = [
+                ...SAMPLE_KEYS,
+                'apple', 'cat', 'dog', 'bird', 'fish', 'wolf', 'bear', 'lion',
+                'fox', 'owl', 'deer', 'frog', 'duck', 'hawk', 'seal', 'crab',
+                'pear', 'plum', 'kiwi', 'lime', 'fig', 'date', 'corn', 'mint'
+            ].filter((k, i, arr) => !existing.has(k) && arr.indexOf(k) === i);
+
+            const picked = [];
+            for (const k of pool) {
+                if (picked.length >= count) break;
+                picked.push(k);
+                existing.add(k);
+            }
+            let suffix = 1;
+            while (picked.length < count) {
+                const candidate = `item_${suffix++}`;
+                if (!existing.has(candidate)) {
+                    picked.push(candidate);
+                    existing.add(candidate);
+                }
+            }
+            return picked;
+        }
+
+        async function handleCauseRehash() {
+            if (isAnimating) return;
+
+            if (bucketCount >= MAX_VISUAL_BUCKETS) {
+                showToast(`Already at max visual cap (${MAX_VISUAL_BUCKETS} buckets). Click Clear to reset to 8.`, 'amber');
+                addLog(`Bucket visualization is capped at ${MAX_VISUAL_BUCKETS} buckets for readability. Click <strong>Clear</strong> to reset to 8 buckets and trigger rehash again.`, 'amber');
+                return;
+            }
+
+            const token = animationToken;
+            setAnimating(true);
+            clearAllHighlights();
+
+            const targetThreshold = bucketCount;
+            const neededBeforeTip = Math.max(0, targetThreshold - mapSize);
+
+            if (mapSize === 0) {
+                addLog(`<strong>⚡ CAUSE REHASH</strong> — Map is empty. Quickly seeding ${targetThreshold} keys (with collisions) to reach <code class="font-mono">load_factor() = 1.00</code>, then inserting the tipping-point key...`, 'amber');
+                const seedPool = ['apple', 'cat', 'dog', 'bird', 'fish', 'wolf', 'bear', 'lion', 'fox', 'owl', 'deer', 'frog', 'duck', 'hawk', 'seal', 'crab'];
+                const groups = {};
+                seedPool.forEach(w => {
+                    const b = stdHashString(w) % bucketCount;
+                    if (!groups[b]) groups[b] = [];
+                    groups[b].push(w);
+                });
+                const bestGroup = Object.values(groups).sort((a, b) => b.length - a.length)[0] || [];
+                const chosen = bestGroup.slice(0, Math.min(3, targetThreshold));
+                const rest = pickUnusedKeys(targetThreshold).filter(k => !chosen.includes(k));
+                const toSeed = [...chosen, ...rest].slice(0, targetThreshold);
+
+                for (let i = 0; i < toSeed.length; i++) {
+                    if (isCancelled(token)) return;
+                    const { node } = quickInsertNode(toSeed[i], (i + 1) * 10);
+                    const inner = document.getElementById(`node-${node.id}`);
+                    if (inner) inner.classList.add('glow-amber');
+                    await sleep(95);
+                }
+            } else if (neededBeforeTip > 0) {
+                addLog(`<strong>⚡ CAUSE REHASH</strong> — Inserting ${neededBeforeTip} key(s) to reach <code class="font-mono">load_factor() = 1.00</code> (${targetThreshold}/${bucketCount}), then inserting the tipping-point key...`, 'amber');
+                const toSeed = pickUnusedKeys(neededBeforeTip);
+                for (let i = 0; i < toSeed.length; i++) {
+                    if (isCancelled(token)) return;
+                    const { node } = quickInsertNode(toSeed[i], Math.floor(Math.random() * 90 + 10));
+                    const inner = document.getElementById(`node-${node.id}`);
+                    if (inner) inner.classList.add('glow-amber');
+                    await sleep(95);
+                }
+            } else {
+                addLog(`<strong>⚡ CAUSE REHASH</strong> — Map is already at <code class="font-mono">load_factor() = 1.00</code>. Inserting the tipping-point key now...`, 'amber');
+            }
+
+            if (isCancelled(token)) return;
+            await sleep(220);
+            if (isCancelled(token)) return;
+
+            const [tipKey] = pickUnusedKeys(1);
+            const tipVal = '999';
+            keyInput.value = tipKey;
+            valInput.value = tipVal;
+
+            await animateInsert(tipKey, tipVal, { nested: true, token });
+            if (!isCancelled(token)) setAnimating(false);
+        }
+
+        async function handleExplicitRehash() {
+            if (isAnimating) return;
+
+            if (bucketCount >= MAX_VISUAL_BUCKETS) {
+                showToast(`Already at max visual cap (${MAX_VISUAL_BUCKETS} buckets). Click Clear to reset to 8.`, 'amber');
+                addLog(`Bucket visualization is capped at ${MAX_VISUAL_BUCKETS} buckets. Click <strong>Clear</strong> to reset to 8 buckets.`, 'amber');
+                return;
+            }
+
+            const token = animationToken;
+            setAnimating(true);
+            clearAllHighlights();
+
+            if (mapSize === 0) {
+                addLog(`Map is empty — seeding 4 starter nodes first so node migration is clearly visible...`, 'purple');
+                const starters = pickUnusedKeys(4);
+                for (let i = 0; i < starters.length; i++) {
+                    if (isCancelled(token)) return;
+                    quickInsertNode(starters[i], (i + 1) * 15);
+                    await sleep(100);
+                }
+                if (isCancelled(token)) return;
+                await sleep(220);
+            }
+
+            await performRehash({ reason: 'explicit', token });
+            if (!isCancelled(token)) setAnimating(false);
+        }
+
+        // ==================== OPERATION 2: FIND ====================
+        async function animateFind(key) {
+            if (isAnimating) return;
+            const token = animationToken;
+            setAnimating(true);
+            clearAllHighlights();
+            setComplexity('Avg: O(1) | Worst: O(N)', 'cyan');
+
+            setCppCode(
+`<span class="text-slate-500">// Lookup key in O(1) average time</span>
+<span class="text-purple-400">auto</span> it = umap.find(<span class="text-amber-300">"${escapeHtml(key)}"</span>);
+<span class="text-purple-400">if</span> (it != umap.end()) {
+    std::cout &lt;&lt; it-&gt;second;
+}`
+            );
+
+            const hashVal = stdHashString(key);
+            const bucketIdx = hashVal % bucketCount;
+
+            addLog(`<strong>FIND</strong> <code class="font-mono text-amber-300">"${escapeHtml(key)}"</code>`, 'cyan');
+
+            await animateHashPipeline(key, hashVal, bucketIdx, { mode: 'normal', token });
+            if (isCancelled(token)) return;
+            addLog(`Jumping directly to <code class="font-mono text-cyan-300">Bucket [${bucketIdx}]</code> (${formatHashHex(hashVal)} % ${bucketCount}).`, 'cyan');
+
+            highlightBucket(bucketIdx, 'cyan');
+            const headArrow = document.getElementById(`bucket-head-arrow-${bucketIdx}`);
+            if (headArrow) {
+                headArrow.classList.remove('text-slate-600');
+                headArrow.classList.add('text-cyan-400');
+            }
+            await sleep(getDelay('short'));
+            if (isCancelled(token)) return;
+
+            const chain = buckets[bucketIdx];
+            for (let i = 0; i < chain.length; i++) {
+                const node = chain[i];
+                const nodeEl = document.getElementById(`node-${node.id}`);
+                nodeEl.classList.add('glow-cyan', 'bg-cyan-950/40', 'scale-105');
+                addLog(`Comparing <code class="font-mono">"${escapeHtml(node.key)}" == "${escapeHtml(key)}"</code>...`, 'slate');
+                await sleep(getDelay('step'));
+                if (isCancelled(token)) return;
+
+                if (node.key === key) {
+                    nodeEl.classList.remove('glow-cyan', 'bg-cyan-950/40');
+                    nodeEl.classList.add('glow-emerald', 'bg-emerald-950/40');
+                    showNodeBadge(node.id, `it -> {"${node.key}", ${node.value}}`, 'emerald');
+
+                    addLog(`<strong>FOUND!</strong> Returns iterator <code class="font-mono text-emerald-300">it &rarr; {"${escapeHtml(node.key)}", ${escapeHtml(node.value)}}</code>.`, 'emerald');
+                    pipelineStatus.textContent = `Found "${key}" in Bucket [${bucketIdx}]`;
+                    pipelineStatus.className = 'text-xs font-mono text-emerald-400';
+
+                    await sleep(getDelay('step'));
+                    if (isCancelled(token)) return;
+                    nodeEl.classList.remove('scale-105');
+                    setAnimating(false);
+                    return;
+                }
+
+                nodeEl.classList.remove('glow-cyan', 'bg-cyan-950/40', 'scale-105');
+                const nextArrow = document.getElementById(`arrow-after-${node.id}`);
+                if (nextArrow) {
+                    nextArrow.classList.remove('text-slate-600');
+                    nextArrow.classList.add('text-cyan-400');
+                }
+                await sleep(getDelay('short') * 0.7);
+                if (isCancelled(token)) return;
+            }
+
+            showNullBadge(bucketIdx, 'returns umap.end()');
+            addLog(`Reached <code class="font-mono text-rose-300">nullptr</code>. Key <code class="font-mono">"${escapeHtml(key)}"</code> not found &rarr; returns <code class="font-mono text-rose-300">umap.end()</code>.`, 'rose');
+            pipelineStatus.textContent = `"${key}" not found — returned umap.end()`;
+            pipelineStatus.className = 'text-xs font-mono text-rose-400';
+
+            await sleep(getDelay('step'));
+            if (!isCancelled(token)) setAnimating(false);
+        }
+
+        // ==================== OPERATION 3: ERASE (DELETE) ====================
+        async function animateErase(key) {
+            if (isAnimating) return;
+            const token = animationToken;
+            setAnimating(true);
+            clearAllHighlights();
+            setComplexity('Avg: O(1) | Worst: O(N)', 'cyan');
+
+            setCppCode(
+`<span class="text-slate-500">// Erase element by key (returns 1 if erased, 0 if not found)</span>
+<span class="text-cyan-300">size_t</span> erased = umap.erase(<span class="text-amber-300">"${escapeHtml(key)}"</span>);`
+            );
+
+            const hashVal = stdHashString(key);
+            const bucketIdx = hashVal % bucketCount;
+
+            addLog(`<strong>ERASE</strong> <code class="font-mono text-amber-300">"${escapeHtml(key)}"</code>`, 'rose');
+
+            await animateHashPipeline(key, hashVal, bucketIdx, { mode: 'normal', token });
+            if (isCancelled(token)) return;
+            addLog(`Located target bucket: <code class="font-mono text-cyan-300">Bucket [${bucketIdx}]</code>.`, 'cyan');
+
+            highlightBucket(bucketIdx, 'cyan');
+            const headArrow = document.getElementById(`bucket-head-arrow-${bucketIdx}`);
+            if (headArrow) {
+                headArrow.classList.remove('text-slate-600');
+                headArrow.classList.add('text-cyan-400');
+            }
+            await sleep(getDelay('short'));
+            if (isCancelled(token)) return;
+
+            const chain = buckets[bucketIdx];
+            for (let i = 0; i < chain.length; i++) {
+                const node = chain[i];
+                const nodeEl = document.getElementById(`node-${node.id}`);
+                nodeEl.classList.add('glow-cyan', 'bg-cyan-950/40', 'scale-105');
+                await sleep(getDelay('step'));
+                if (isCancelled(token)) return;
+
+                if (node.key === key) {
+                    nodeEl.classList.remove('glow-cyan', 'bg-cyan-950/40');
+                    nodeEl.classList.add('glow-rose', 'bg-rose-950/40');
+                    showNodeBadge(node.id, 'Erasing...', 'rose');
+                    addLog(`Matched <code class="font-mono text-rose-300">"${escapeHtml(key)}"</code> at ${node.addr}. Re-linking previous pointer to bypass node...`, 'rose');
+
+                    const prevArrow = i === 0
+                        ? document.getElementById(`bucket-head-arrow-${bucketIdx}`)
+                        : document.getElementById(`arrow-after-${chain[i - 1].id}`);
+                    if (prevArrow) {
+                        prevArrow.classList.remove('text-cyan-400', 'text-slate-600');
+                        prevArrow.classList.add('text-amber-400', 'arrow-bypass');
+                    }
+
+                    await sleep(getDelay('step'));
+                    if (isCancelled(token)) return;
+
+                    const wrapper = document.getElementById(`node-wrap-${node.id}`);
+                    if (wrapper) {
+                        wrapper.classList.add('animate-node-out');
+                    }
+                    await sleep(460);
+                    if (isCancelled(token)) return;
+
+                    chain.splice(i, 1);
+                    mapSize--;
+                    if (wrapper) wrapper.remove();
+
+                    if (prevArrow) {
+                        prevArrow.classList.remove('arrow-bypass', 'text-amber-400');
+                        prevArrow.classList.add('text-emerald-400');
+                    }
+
+                    updateStats();
+                    addLog(`Node deallocated & pointers re-linked. <code class="font-mono text-emerald-300">umap.erase("${escapeHtml(key)}")</code> returns <code class="font-mono text-emerald-300">1</code>.`, 'emerald');
+                    pipelineStatus.textContent = `Erased "${key}" from Bucket [${bucketIdx}] (returned 1)`;
+                    pipelineStatus.className = 'text-xs font-mono text-rose-400';
+
+                    await sleep(getDelay('short'));
+                    if (!isCancelled(token)) setAnimating(false);
+                    return;
+                }
+
+                nodeEl.classList.remove('glow-cyan', 'bg-cyan-950/40', 'scale-105');
+                const nextArrow = document.getElementById(`arrow-after-${node.id}`);
+                if (nextArrow) {
+                    nextArrow.classList.remove('text-slate-600');
+                    nextArrow.classList.add('text-cyan-400');
+                }
+                await sleep(getDelay('short') * 0.7);
+                if (isCancelled(token)) return;
+            }
+
+            showNullBadge(bucketIdx, 'returns 0 (not found)');
+            addLog(`Reached <code class="font-mono text-rose-300">nullptr</code>. Key <code class="font-mono">"${escapeHtml(key)}"</code> not found &rarr; returns <code class="font-mono text-rose-300">0</code>.`, 'rose');
+            pipelineStatus.textContent = `"${key}" not found — returned 0`;
+            pipelineStatus.className = 'text-xs font-mono text-rose-400';
+
+            await sleep(getDelay('step'));
+            if (!isCancelled(token)) setAnimating(false);
+        }
+
+        // ==================== DEMO & UTILITY HANDLERS ====================
+        async function loadCollisionDemo() {
+            if (isAnimating) return;
+            handleClear();
+            const token = animationToken;
+            setAnimating(true);
+
+            // Dynamically find 3 distinct words that hash to the exact same bucket
+            const wordPool = [
+                'apple', 'cat', 'dog', 'bird', 'fish', 'wolf', 'bear', 'lion',
+                'fox', 'owl', 'deer', 'frog', 'duck', 'hawk', 'seal', 'crab',
+                'pear', 'plum', 'kiwi', 'lime', 'fig', 'date', 'corn', 'mint'
+            ];
+            const groups = {};
+            wordPool.forEach(w => {
+                const b = stdHashString(w) % bucketCount;
+                if (!groups[b]) groups[b] = [];
+                groups[b].push(w);
+            });
+            const colliding = Object.values(groups).sort((a, b) => b.length - a.length)[0].slice(0, 3);
+            const other = wordPool.find(w => !colliding.includes(w) && (stdHashString(w) % bucketCount) !== (stdHashString(colliding[0]) % bucketCount));
+            const demoKeys = [...colliding, other].filter(Boolean);
+
+            addLog(`<strong>COLLISION DEMO</strong> — Inserting keys that hash to the same bucket to demonstrate separate chaining.`, 'amber');
+
+            for (let i = 0; i < demoKeys.length; i++) {
+                if (isCancelled(token)) return;
+                await animateInsert(demoKeys[i], String((i + 1) * 10), { nested: true, token });
+            }
+
+            if (!isCancelled(token)) {
+                keyInput.value = colliding[colliding.length - 1];
+                valInput.value = '99';
+                showToast(`Loaded collision chain in Bucket [${stdHashString(colliding[0]) % bucketCount}]! Try Find or Erase.`, 'amber');
+                setAnimating(false);
+            }
+        }
+
+        async function handleRandomInsert() {
+            if (isAnimating) return;
+            const [key] = pickUnusedKeys(1);
+            const val = String(Math.floor(Math.random() * 90 + 10));
+            keyInput.value = key;
+            valInput.value = val;
+            await animateInsert(key, val);
+        }
+
+        function handleClear() {
+            // Increment animationToken to cleanly cancel any running animation
+            animationToken++;
+            setAnimating(false);
+
+            bucketCount = INITIAL_BUCKETS;
+            buckets = Array.from({ length: bucketCount }, () => []);
+            mapSize = 0;
+            renderBuckets();
+            updateStats();
+            clearAllHighlights();
+            resetPipeline();
+
+            rehashBanner.classList.add('hidden');
+            migrationTray.classList.add('hidden');
+            statBucketCard.classList.remove('glow-purple');
+
+            pipeKey.textContent = '—';
+            pipeHash.textContent = '—';
+            pipeBucket.textContent = '—';
+            pipelineStatus.textContent = 'Cleared — map is empty';
+            pipelineStatus.className = 'text-xs font-mono text-slate-500';
+            setComplexity('Avg: O(1) | Worst: O(N)', 'cyan');
+
+            setCppCode(
+`<span class="text-slate-500">// Remove all elements from unordered_map</span>
+umap.clear();
+<span class="text-slate-500">// umap.size() == 0</span>`
+            );
+            addLog('Cleared all elements and reset to 8 empty buckets.', 'slate');
+        }
+
+        function getValidatedKey() {
+            const raw = keyInput.value.trim();
+            if (!raw) {
+                keyInputWrap.classList.remove('animate-shake');
+                void keyInputWrap.offsetWidth; // trigger reflow
+                keyInputWrap.classList.add('animate-shake');
+                keyInput.focus();
+                showToast('Please enter a Key first.', 'rose');
+                return null;
+            }
+            return raw;
+        }
+
+        // ==================== EVENT LISTENERS ====================
+        speedSlider.addEventListener('input', () => {
+            const preset = SPEED_PRESETS[speedSlider.value] || SPEED_PRESETS[2];
+            speedLabel.textContent = preset.label;
+        });
+
+        btnInsert.addEventListener('click', () => {
+            const k = getValidatedKey();
+            if (!k) return;
+            const v = valInput.value.trim() || '0';
+            animateInsert(k, v);
+        });
+
+        btnFind.addEventListener('click', () => {
+            const k = getValidatedKey();
+            if (!k) return;
+            animateFind(k);
+        });
+
+        btnErase.addEventListener('click', () => {
+            const k = getValidatedKey();
+            if (!k) return;
+            animateErase(k);
+        });
+
+        btnCauseRehash.addEventListener('click', handleCauseRehash);
+        btnRehash2x.addEventListener('click', handleExplicitRehash);
+        btnCollision.addEventListener('click', loadCollisionDemo);
+        btnRandom.addEventListener('click', handleRandomInsert);
+        btnClear.addEventListener('click', handleClear);
+
+        btnClearLog.addEventListener('click', () => {
+            narrationLog.innerHTML = '';
+            stepCounter = 0;
+        });
+
+        // Allow Enter key in inputs to trigger Insert
+        [keyInput, valInput].forEach(input => {
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !isAnimating) {
+                    btnInsert.click();
+                }
+            });
+        });
+
+        // ==================== INITIALIZATION ====================
+        window.addEventListener('DOMContentLoaded', () => {
+            renderBuckets();
+            updateStats();
+            addLog('Initialized empty <code class="font-mono text-cyan-300">std::unordered_map</code> with 8 buckets and <code class="font-mono">max_load_factor() = 1.00</code>. Try <strong>⚡ Cause Rehash</strong> or <strong>Load Collision Demo</strong>!', 'cyan');
+        });
+    </script>
+</body>
+</html>
