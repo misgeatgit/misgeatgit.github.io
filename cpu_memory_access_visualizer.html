@@ -1,0 +1,2135 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CPU Memory Access: Array vs. Linked List</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Fonts: Inter for UI, JetBrains Mono for hex addresses & registers -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+          },
+          colors: {
+            navy: {
+              950: '#060a13',
+              900: '#0b1120',
+              850: '#0f172a',
+              800: '#162036',
+              700: '#1e2c48',
+            }
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    /* Base dark architectural theme and subtle grid backdrop */
+    body {
+      background-color: #060a13;
+      background-image:
+        radial-gradient(circle at 20% 0%, rgba(14, 165, 233, 0.08), transparent 38%),
+        radial-gradient(circle at 80% 0%, rgba(139, 92, 246, 0.08), transparent 38%),
+        linear-gradient(rgba(148, 163, 184, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(148, 163, 184, 0.03) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px;
+      color: #e2e8f0;
+      font-family: 'Inter', system-ui, sans-serif;
+      overflow-x: hidden;
+    }
+
+    /* Crisp custom scrollbars */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0b1120; }
+    ::-webkit-scrollbar-thumb { background: #263450; border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3b4f78; }
+
+    /* Glow utilities */
+    .glow-emerald { box-shadow: 0 0 18px rgba(16, 185, 129, 0.35), inset 0 0 8px rgba(16, 185, 129, 0.2); }
+    .glow-rose    { box-shadow: 0 0 18px rgba(244, 63, 94, 0.38), inset 0 0 8px rgba(244, 63, 94, 0.22); }
+    .glow-amber   { box-shadow: 0 0 16px rgba(245, 158, 11, 0.35), inset 0 0 8px rgba(245, 158, 11, 0.18); }
+    .glow-cyan    { box-shadow: 0 0 18px rgba(6, 182, 212, 0.35), inset 0 0 8px rgba(6, 182, 212, 0.2); }
+    .glow-violet  { box-shadow: 0 0 18px rgba(139, 92, 246, 0.38), inset 0 0 8px rgba(139, 92, 246, 0.22); }
+
+    /* Pulsing animations for active stalls and hit bursts */
+    @keyframes stallPulse {
+      0%, 100% { border-color: rgba(244, 63, 94, 0.75); box-shadow: 0 0 12px rgba(244, 63, 94, 0.25); }
+      50%      { border-color: rgba(245, 158, 11, 0.95); box-shadow: 0 0 22px rgba(245, 158, 11, 0.42); }
+    }
+    .animate-stall { animation: stallPulse 1.1s ease-in-out infinite; }
+
+    @keyframes hitFlash {
+      0%   { transform: scale(1.06); background-color: rgba(16, 185, 129, 0.48); border-color: #34d399; }
+      100% { transform: scale(1); }
+    }
+    .flash-hit { animation: hitFlash 260ms ease-out; }
+
+    @keyframes missFlash {
+      0%   { background-color: rgba(244, 63, 94, 0.35); border-color: #fb7185; }
+      100% { background-color: rgba(15, 23, 42, 0.85); }
+    }
+    .flash-miss { animation: missFlash 380ms ease-out; }
+
+    @keyframes evictFlash {
+      0%   { border-color: #f59e0b; box-shadow: 0 0 14px rgba(245, 158, 11, 0.55); }
+      100% { box-shadow: none; }
+    }
+    .flash-evict { animation: evictFlash 480ms ease-out; }
+
+    /* Range slider styling */
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      background: #1e293b;
+      height: 6px;
+      border-radius: 9999px;
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 9999px;
+      background: #38bdf8;
+      border: 2px solid #0b1120;
+      cursor: pointer;
+      box-shadow: 0 0 8px rgba(56, 189, 248, 0.6);
+      transition: transform 0.12s ease;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.15);
+    }
+
+    /* Smooth SVG dash animation for pointer chasing */
+    @keyframes dashFlow {
+      to { stroke-dashoffset: -24; }
+    }
+    .ptr-dash-active {
+      stroke-dasharray: 6 6;
+      animation: dashFlow 0.7s linear infinite;
+    }
+
+    /* Cache line slot transitions */
+    .ram-slot {
+      transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
+    }
+  </style>
+</head>
+
+<body class="min-h-screen antialiased selection:bg-cyan-500/30 selection:text-cyan-200">
+  <div class="max-w-[1620px] mx-auto px-3 sm:px-5 py-3 sm:py-4 flex flex-col gap-3.5">
+
+    <!-- =====================================================================
+         TOP HEADER & UNIFIED CONTROL BAR
+    ====================================================================== -->
+    <header class="rounded-2xl bg-navy-900/90 border border-slate-800/90 backdrop-blur-md px-4 py-3 shadow-2xl">
+      <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+        <!-- Title & Subtitle -->
+        <div class="flex items-start sm:items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500/20 to-violet-500/20 border border-cyan-500/30 flex items-center justify-center shrink-0">
+            <!-- CPU Die Icon -->
+            <svg class="w-5 h-5 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="4" width="16" height="16" rx="2" />
+              <rect x="9" y="9" width="6" height="6" />
+              <path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3" />
+            </svg>
+          </div>
+          <div>
+            <div class="flex flex-wrap items-center gap-2.5">
+              <h1 class="text-base sm:text-lg font-extrabold tracking-tight text-white">
+                CPU Memory Access: <span class="text-cyan-400">Array</span> vs. <span class="text-violet-400">Linked List</span>
+              </h1>
+              <!-- Global Simulated Clock Badge -->
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-800/90 border border-slate-700/80 font-mono text-[11px] text-slate-300">
+                <span id="clockDot" class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                CLK: <strong id="globalClockDisplay" class="text-white">0</strong> cyc
+              </span>
+            </div>
+            <p class="text-xs text-slate-400 mt-0.5">
+              Synchronized single-core simulation of 64-byte L1 cache lines, spatial locality, pointer chasing &amp; hardware prefetching
+            </p>
+          </div>
+        </div>
+
+        <!-- Live Speedup Comparison Pill -->
+        <div id="speedupPill" class="self-start xl:self-auto inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-cyan-500/15 via-emerald-500/15 to-cyan-500/15 border border-emerald-500/35 text-xs sm:text-sm font-semibold text-emerald-300 shadow-lg">
+          <svg class="w-4 h-4 text-emerald-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+          </svg>
+          <span id="speedupText">Initializing simulation...</span>
+        </div>
+      </div>
+
+      <!-- Controls Toolbar -->
+      <div class="mt-3 pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
+        <!-- Playback Controls -->
+        <div class="flex flex-wrap items-center gap-2">
+          <button id="btnPlayPause" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 active:scale-[0.98] text-slate-950 font-bold text-xs transition shadow-md shadow-cyan-500/20 cursor-pointer" title="Play / Pause (Space)">
+            <svg id="iconPlay" class="w-3.5 h-3.5 hidden" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4" /></svg>
+            <svg id="iconPause" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
+            <span id="playPauseLabel">Pause</span>
+          </button>
+
+          <button id="btnStep" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-[0.98] border border-slate-700 text-slate-200 font-semibold text-xs transition cursor-pointer" title="Advance to next memory access event (Right Arrow)">
+            <svg class="w-3.5 h-3.5 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="5 4 15 12 5 20 5 4" />
+              <line x1="19" y1="5" x2="19" y2="19" />
+            </svg>
+            Step
+          </button>
+
+          <button id="btnReset" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-[0.98] border border-slate-700 text-slate-200 font-semibold text-xs transition cursor-pointer" title="Reset simulation and reshuffle Linked List heap addresses (R)">
+            <svg class="w-3.5 h-3.5 text-violet-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+              <path d="M3 3v5h5" />
+            </svg>
+            Reset &amp; Reshuffle
+          </button>
+        </div>
+
+        <!-- Simulation Parameters -->
+        <div class="flex flex-wrap items-center gap-4">
+          <!-- Speed Slider -->
+          <div class="flex items-center gap-2.5 bg-slate-900/90 border border-slate-800 rounded-xl px-3 py-1.5">
+            <label for="speedSlider" class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Speed</label>
+            <input id="speedSlider" type="range" min="0.5" max="4" step="0.25" value="1.25" class="w-24 sm:w-28" />
+            <span id="speedValue" class="font-mono text-xs font-bold text-cyan-300 w-10 text-right">1.25×</span>
+          </div>
+
+          <!-- Element Count Selector -->
+          <div class="flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 rounded-xl px-2.5 py-1">
+            <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mr-1">Elements</span>
+            <button data-count="16" class="count-btn px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition cursor-pointer text-slate-400 hover:text-white">16</button>
+            <button data-count="32" class="count-btn px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition cursor-pointer bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">32</button>
+            <button data-count="48" class="count-btn px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition cursor-pointer text-slate-400 hover:text-white">48</button>
+          </div>
+
+          <!-- Hardware Prefetcher Toggle -->
+          <button id="btnPrefetchToggle" role="switch" aria-checked="true" class="flex items-center gap-2.5 bg-slate-900/90 hover:bg-slate-800/90 border border-cyan-500/45 rounded-xl px-3 py-1.5 transition cursor-pointer">
+            <span class="text-[11px] font-semibold text-slate-300 uppercase tracking-wider">HW Prefetcher</span>
+            <span id="prefetchTrack" class="relative inline-flex items-center w-9 h-5 rounded-full bg-cyan-500/80 transition-colors">
+              <span id="prefetchThumb" class="inline-block w-3.5 h-3.5 rounded-full bg-white shadow transform translate-x-4.5 transition-transform" style="transform: translateX(18px);"></span>
+            </span>
+            <span id="prefetchLabel" class="font-mono text-[11px] font-bold text-cyan-300 w-6">ON</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- =====================================================================
+         MAIN SIDE-BY-SIDE ARCHITECTURE SIMULATOR
+         Left: Contiguous Array | Right: Scattered Linked List
+    ====================================================================== -->
+    <main class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+
+      <!-- ===================================================================
+           LEFT PANEL: LARGE CONTIGUOUS ARRAY
+      ==================================================================== -->
+      <section class="rounded-2xl bg-navy-900/85 border border-cyan-500/25 shadow-2xl overflow-hidden flex flex-col">
+        <!-- Panel Title Strip -->
+        <div class="px-4 py-2.5 bg-gradient-to-r from-cyan-500/12 via-slate-900/60 to-transparent border-b border-slate-800/90 flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]"></span>
+            <h2 class="font-bold text-sm sm:text-base text-white tracking-tight">Contiguous Array</h2>
+            <span class="hidden sm:inline-block font-mono text-[11px] px-2 py-0.5 rounded-md bg-cyan-500/10 text-cyan-300 border border-cyan-500/25">int arr[N]</span>
+          </div>
+          <span class="font-mono text-[11px] text-emerald-300/90 bg-emerald-500/10 border border-emerald-500/25 px-2 py-0.5 rounded-md">High Spatial Locality</span>
+        </div>
+
+        <div class="p-3.5 flex flex-col gap-0">
+          <!-- TIER 1: SINGLE CPU CORE & ALU (ARRAY) -->
+          <div id="arrCpuCard" class="rounded-xl bg-navy-850 border border-slate-700/90 p-3 transition-all duration-200">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono text-[10px] font-bold text-cyan-300 uppercase tracking-wider">CPU Core 0 · ALU</span>
+                <code class="font-mono text-[11px] sm:text-xs text-slate-200 bg-slate-950/70 px-2 py-0.5 rounded border border-slate-800">sum += arr[i];</code>
+              </div>
+              <!-- Hardware Prefetcher Indicator -->
+              <div id="arrPrefetchBadge" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-[10px] font-semibold bg-cyan-500/15 text-cyan-300 border border-cyan-500/35">
+                <span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                <span>PREFETCH: READY</span>
+              </div>
+            </div>
+
+            <!-- Registers + State Badge Row -->
+            <div class="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+              <!-- Register File -->
+              <div class="sm:col-span-7 grid grid-cols-4 gap-1.5">
+                <div class="rounded-lg bg-slate-950/80 border border-slate-800/90 px-2 py-1.5">
+                  <div class="text-[9px] font-mono uppercase text-slate-500">Index i</div>
+                  <div id="arrRegIdx" class="font-mono text-xs font-bold text-cyan-300">0</div>
+                </div>
+                <div class="rounded-lg bg-slate-950/80 border border-slate-800/90 px-2 py-1.5">
+                  <div class="text-[9px] font-mono uppercase text-slate-500">Addr</div>
+                  <div id="arrRegAddr" class="font-mono text-xs font-bold text-slate-200">0x1000</div>
+                </div>
+                <div class="rounded-lg bg-slate-950/80 border border-slate-800/90 px-2 py-1.5">
+                  <div class="text-[9px] font-mono uppercase text-slate-500">Value</div>
+                  <div id="arrRegVal" class="font-mono text-xs font-bold text-white">--</div>
+                </div>
+                <div class="rounded-lg bg-slate-950/80 border border-slate-800/90 px-2 py-1.5">
+                  <div class="text-[9px] font-mono uppercase text-slate-500">Sum</div>
+                  <div id="arrRegSum" class="font-mono text-xs font-bold text-emerald-300">0</div>
+                </div>
+              </div>
+
+              <!-- Animated CPU State Badge -->
+              <div class="sm:col-span-5">
+                <div id="arrStateBadge" class="rounded-lg px-2.5 py-1.5 border border-slate-700 bg-slate-900/90 flex flex-col justify-center min-h-[44px]">
+                  <div class="flex items-center justify-between gap-1">
+                    <span id="arrStateTitle" class="font-mono text-[11px] font-bold text-slate-300">READY</span>
+                    <span id="arrStateCycles" class="font-mono text-[10px] text-slate-400">0 / 4 cyc</span>
+                  </div>
+                  <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden mt-1">
+                    <div id="arrStateBar" class="h-full bg-emerald-400 transition-none" style="width: 0%"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ANIMATED BUS A: CPU <-> L1 CACHE (SHORT & ULTRA-FAST) -->
+          <div class="relative h-9 w-full flex items-center justify-center">
+            <svg id="arrCpuBusSvg" class="w-full h-full overflow-visible" viewBox="0 0 400 36" preserveAspectRatio="none">
+              <!-- Static bus traces -->
+              <line x1="175" y1="0" x2="175" y2="36" stroke="#1e293b" stroke-width="3" />
+              <line x1="225" y1="0" x2="225" y2="36" stroke="#1e293b" stroke-width="3" />
+              <!-- Active animated trace overlays -->
+              <line id="arrCpuBusDown" x1="175" y1="0" x2="175" y2="36" stroke="#38bdf8" stroke-width="2.5" opacity="0.2" />
+              <line id="arrCpuBusUp" x1="225" y1="0" x2="225" y2="36" stroke="#10b981" stroke-width="2.5" opacity="0.2" />
+              <!-- Animated packets -->
+              <circle id="arrCpuPktDown" cx="175" cy="18" r="4.5" fill="#f43f5e" opacity="0" />
+              <circle id="arrCpuPktUp" cx="225" cy="18" r="5" fill="#10b981" opacity="0" />
+            </svg>
+            <span class="absolute left-3 font-mono text-[10px] text-slate-500">L1 Bus · 4 cyc</span>
+            <span id="arrCpuBusStatus" class="absolute right-3 font-mono text-[10px] font-semibold text-emerald-400 opacity-0 transition-opacity duration-150">HIT ↑</span>
+          </div>
+
+          <!-- TIER 2: L1 DATA CACHE (4 CACHE LINES, 64B EACH, LRU) -->
+          <div id="arrL1Card" class="rounded-xl bg-navy-850 border border-slate-700/90 p-3 relative">
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-2">
+                <span class="font-mono text-[11px] font-bold text-emerald-300 uppercase tracking-wider">L1 Data Cache</span>
+                <span class="font-mono text-[10px] text-slate-400">4 Lines × 64B · LRU</span>
+              </div>
+              <span id="arrL1EventBadge" class="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-400 transition-colors">IDLE</span>
+            </div>
+            <!-- 4 Cache Lines Container -->
+            <div id="arrL1Lines" class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+              <!-- Populated dynamically by JS -->
+            </div>
+          </div>
+
+          <!-- ANIMATED BUS B: L1 CACHE <-> MAIN RAM (HIGH LATENCY 100 CYC) -->
+          <div class="relative h-16 w-full flex items-center justify-center">
+            <svg id="arrRamBusSvg" class="w-full h-full overflow-visible" viewBox="0 0 400 64" preserveAspectRatio="none">
+              <!-- Main Demand Fetch Bus (Left: Addr Req Down, Center: 64B Data Up) -->
+              <line x1="150" y1="0" x2="150" y2="64" stroke="#1e293b" stroke-width="3" />
+              <line x1="205" y1="0" x2="205" y2="64" stroke="#1e293b" stroke-width="5" />
+              <!-- Dedicated Hardware Prefetch Channel (Right) -->
+              <line id="arrPfLane" x1="275" y1="0" x2="275" y2="64" stroke="#0891b2" stroke-width="2" stroke-dasharray="4 4" opacity="0.28" />
+
+              <!-- Glowing Demand Request Down -->
+              <line id="arrRamReqGlow" x1="150" y1="0" x2="150" y2="64" stroke="#f43f5e" stroke-width="3" opacity="0" />
+              <circle id="arrRamReqPkt" cx="150" cy="0" r="4.5" fill="#fb7185" opacity="0" />
+
+              <!-- Glowing 64B Cache Line Block Traveling UP -->
+              <line id="arrRamDataGlow" x1="205" y1="0" x2="205" y2="64" stroke="#f59e0b" stroke-width="4" opacity="0" />
+              <g id="arrRamDataPkt" opacity="0" transform="translate(205, 32)">
+                <rect x="-26" y="-8" width="52" height="16" rx="4" fill="#f59e0b" stroke="#fef3c7" stroke-width="1.2" />
+                <text x="0" y="3.5" text-anchor="middle" fill="#0f172a" font-family="JetBrains Mono" font-size="8.5" font-weight="800">64B LINE</text>
+              </g>
+
+              <!-- Glowing Prefetch 64B Packet Traveling UP in background -->
+              <g id="arrPfPkt" opacity="0" transform="translate(275, 32)">
+                <rect x="-25" y="-7.5" width="50" height="15" rx="4" fill="#06b6d4" stroke="#cffafe" stroke-width="1" />
+                <text x="0" y="3" text-anchor="middle" fill="#082f49" font-family="JetBrains Mono" font-size="8" font-weight="800">PREFETCH</text>
+              </g>
+            </svg>
+            <div class="absolute left-3 flex flex-col">
+              <span class="font-mono text-[10px] text-slate-400">Memory Bus · 100 cyc</span>
+              <span id="arrRamBusText" class="font-mono text-[10px] font-semibold text-slate-500">Idle</span>
+            </div>
+            <div class="absolute right-3 text-right">
+              <span id="arrPfBusText" class="font-mono text-[10px] font-semibold text-cyan-400/80">Prefetch Lane</span>
+            </div>
+          </div>
+
+          <!-- TIER 3: MAIN MEMORY (RAM GRID) -->
+          <div class="rounded-xl bg-navy-850 border border-slate-700/90 p-3">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <div class="flex items-center gap-2">
+                <span class="font-mono text-[11px] font-bold text-slate-200 uppercase tracking-wider">Main Memory (RAM)</span>
+                <span id="arrRamMeta" class="font-mono text-[10px] text-slate-400">Contiguous 64B Blocks</span>
+              </div>
+              <span class="font-mono text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/25">
+                100% Useful / 64B Fetch
+              </span>
+            </div>
+            <div id="arrRamGrid" class="grid gap-1.5 relative">
+              <!-- Populated dynamically by JS -->
+            </div>
+          </div>
+
+          <!-- LIVE NARRATION STRIP (ARRAY) -->
+          <div id="arrNarrationBox" class="mt-3 rounded-xl bg-slate-950/90 border border-slate-800 border-l-4 border-l-cyan-400 px-3 py-2 min-h-[46px] flex items-center">
+            <p id="arrNarration" class="text-xs text-slate-300 leading-snug font-medium">Ready to traverse contiguous array in RAM.</p>
+          </div>
+
+          <!-- LIVE TELEMETRY (ARRAY) -->
+          <div class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div class="rounded-xl bg-slate-950/70 border border-slate-800/90 p-2.5">
+              <div class="flex items-center justify-between text-[10px] font-mono text-slate-400 uppercase">
+                <span>Progress</span>
+                <span id="arrProgText" class="text-cyan-300 font-bold">0 / 32</span>
+              </div>
+              <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden mt-2">
+                <div id="arrProgBar" class="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-100" style="width: 0%"></div>
+              </div>
+            </div>
+
+            <div class="rounded-xl bg-slate-950/70 border border-slate-800/90 p-2.5">
+              <div class="text-[10px] font-mono text-slate-400 uppercase">Total Cycles</div>
+              <div id="arrTotalCycles" class="font-mono text-base font-extrabold text-white mt-0.5">0</div>
+            </div>
+
+            <div class="rounded-xl bg-slate-950/70 border border-slate-800/90 p-2.5">
+              <div class="flex items-center justify-between text-[10px] font-mono text-slate-400 uppercase">
+                <span>L1 Hit Rate</span>
+                <span id="arrHitRate" class="text-emerald-400 font-bold">0%</span>
+              </div>
+              <div class="font-mono text-[11px] mt-1 flex items-center gap-2">
+                <span class="text-emerald-400"><strong id="arrHits">0</strong> H</span>
+                <span class="text-slate-600">/</span>
+                <span class="text-rose-400"><strong id="arrMisses">0</strong> M</span>
+              </div>
+            </div>
+
+            <div class="rounded-xl bg-slate-950/70 border border-slate-800/90 p-2.5">
+              <div class="flex items-center justify-between text-[10px] font-mono text-slate-400 uppercase">
+                <span>Active vs Stall</span>
+                <span id="arrActivePct" class="text-cyan-300 font-bold">0%</span>
+              </div>
+              <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden mt-2 flex">
+                <div id="arrActiveBar" class="h-full bg-emerald-400" style="width: 0%"></div>
+                <div id="arrStallBar" class="h-full bg-rose-500" style="width: 0%"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================================================================
+           RIGHT PANEL: LARGE SCATTERED LINKED LIST
+      ==================================================================== -->
+      <section class="rounded-2xl bg-navy-900/85 border border-violet-500/25 shadow-2xl overflow-hidden flex flex-col">
+        <!-- Panel Title Strip -->
+        <div class="px-4 py-2.5 bg-gradient-to-r from-violet-500/12 via-slate-900/60 to-transparent border-b border-slate-800/90 flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-violet-400 shadow-[0_0_8px_#a78bfa]"></span>
+            <h2 class="font-bold text-sm sm:text-base text-white tracking-tight">Linked List</h2>
+            <span class="hidden sm:inline-block font-mono text-[11px] px-2 py-0.5 rounded-md bg-violet-500/10 text-violet-300 border border-violet-500/25">Node* head</span>
+          </div>
+          <span class="font-mono text-[11px] text-rose-300/90 bg-rose-500/10 border border-rose-500/25 px-2 py-0.5 rounded-md">Pointer Chasing · Random Heap</span>
+        </div>
+
+        <div class="p-3.5 flex flex-col gap-0">
+          <!-- TIER 1: SINGLE CPU CORE & ALU (LINKED LIST) -->
+          <div id="llCpuCard" class="rounded-xl bg-navy-850 border border-slate-700/90 p-3 transition-all duration-200">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono text-[10px] font-bold text-violet-300 uppercase tracking-wider">CPU Core 0 · ALU</span>
+                <code class="font-mono text-[11px] sm:text-xs text-slate-200 bg-slate-950/70 px-2 py-0.5 rounded border border-slate-800">sum+=n-&gt;val; n=n-&gt;next;</code>
+              </div>
+              <!-- Hardware Prefetcher Indicator -->
+              <div id="llPrefetchBadge" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-[10px] font-semibold bg-amber-500/10 text-amber-300/90 border border-amber-500/30">
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                <span>IDLE (Unpredictable Ptr)</span>
+              </div>
+            </div>
+
+            <!-- Registers + State Badge Row -->
+            <div class="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+              <!-- Register File -->
+              <div class="sm:col-span-7 grid grid-cols-4 gap-1.5">
+                <div class="rounded-lg bg-slate-950/80 border border-slate-800/90 px-2 py-1.5">
+                  <div class="text-[9px] font-mono uppercase text-slate-500">Node</div>
+                  <div id="llRegIdx" class="font-mono text-xs font-bold text-violet-300">N0</div>
+                </div>
+                <div class="rounded-lg bg-slate-950/80 border border-slate-800/90 px-2 py-1.5">
+                  <div class="text-[9px] font-mono uppercase text-slate-500">Ptr Addr</div>
+                  <div id="llRegAddr" class="font-mono text-xs font-bold text-slate-200">0x----</div>
+                </div>
+                <div class="rounded-lg bg-slate-950/80 border border-slate-800/90 px-2 py-1.5">
+                  <div class="text-[9px] font-mono uppercase text-slate-500">Next Ptr</div>
+                  <div id="llRegNext" class="font-mono text-xs font-bold text-pink-300">--</div>
+                </div>
+                <div class="rounded-lg bg-slate-950/80 border border-slate-800/90 px-2 py-1.5">
+                  <div class="text-[9px] font-mono uppercase text-slate-500">Sum</div>
+                  <div id="llRegSum" class="font-mono text-xs font-bold text-emerald-300">0</div>
+                </div>
+              </div>
+
+              <!-- Animated CPU State Badge -->
+              <div class="sm:col-span-5">
+                <div id="llStateBadge" class="rounded-lg px-2.5 py-1.5 border border-slate-700 bg-slate-900/90 flex flex-col justify-center min-h-[44px]">
+                  <div class="flex items-center justify-between gap-1">
+                    <span id="llStateTitle" class="font-mono text-[11px] font-bold text-slate-300">READY</span>
+                    <span id="llStateCycles" class="font-mono text-[10px] text-slate-400">0 / 100 cyc</span>
+                  </div>
+                  <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden mt-1">
+                    <div id="llStateBar" class="h-full bg-rose-500 transition-none" style="width: 0%"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ANIMATED BUS A: CPU <-> L1 CACHE -->
+          <div class="relative h-9 w-full flex items-center justify-center">
+            <svg id="llCpuBusSvg" class="w-full h-full overflow-visible" viewBox="0 0 400 36" preserveAspectRatio="none">
+              <line x1="175" y1="0" x2="175" y2="36" stroke="#1e293b" stroke-width="3" />
+              <line x1="225" y1="0" x2="225" y2="36" stroke="#1e293b" stroke-width="3" />
+              <line id="llCpuBusDown" x1="175" y1="0" x2="175" y2="36" stroke="#a78bfa" stroke-width="2.5" opacity="0.2" />
+              <line id="llCpuBusUp" x1="225" y1="0" x2="225" y2="36" stroke="#10b981" stroke-width="2.5" opacity="0.2" />
+              <circle id="llCpuPktDown" cx="175" cy="18" r="4.5" fill="#f43f5e" opacity="0" />
+              <circle id="llCpuPktUp" cx="225" cy="18" r="5" fill="#10b981" opacity="0" />
+            </svg>
+            <span class="absolute left-3 font-mono text-[10px] text-slate-500">L1 Bus · 4 cyc</span>
+            <span id="llCpuBusStatus" class="absolute right-3 font-mono text-[10px] font-semibold text-rose-400 opacity-0 transition-opacity duration-150">MISS ↓</span>
+          </div>
+
+          <!-- TIER 2: L1 DATA CACHE (4 CACHE LINES, 64B EACH, LRU) -->
+          <div id="llL1Card" class="rounded-xl bg-navy-850 border border-slate-700/90 p-3 relative">
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-2">
+                <span class="font-mono text-[11px] font-bold text-violet-300 uppercase tracking-wider">L1 Data Cache</span>
+                <span class="font-mono text-[10px] text-slate-400">4 Lines × 64B · LRU</span>
+              </div>
+              <span id="llL1EventBadge" class="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-400 transition-colors">IDLE</span>
+            </div>
+            <!-- 4 Cache Lines Container -->
+            <div id="llL1Lines" class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+              <!-- Populated dynamically by JS -->
+            </div>
+          </div>
+
+          <!-- ANIMATED BUS B: L1 CACHE <-> MAIN RAM (HIGH LATENCY 100 CYC) -->
+          <div class="relative h-16 w-full flex items-center justify-center">
+            <svg id="llRamBusSvg" class="w-full h-full overflow-visible" viewBox="0 0 400 64" preserveAspectRatio="none">
+              <line x1="150" y1="0" x2="150" y2="64" stroke="#1e293b" stroke-width="3" />
+              <line x1="205" y1="0" x2="205" y2="64" stroke="#1e293b" stroke-width="5" />
+              <!-- Inactive Prefetch Channel -->
+              <line id="llPfLane" x1="275" y1="0" x2="275" y2="64" stroke="#475569" stroke-width="2" stroke-dasharray="4 4" opacity="0.22" />
+
+              <!-- Glowing Demand Request Down -->
+              <line id="llRamReqGlow" x1="150" y1="0" x2="150" y2="64" stroke="#f43f5e" stroke-width="3" opacity="0" />
+              <circle id="llRamReqPkt" cx="150" cy="0" r="4.5" fill="#fb7185" opacity="0" />
+
+              <!-- Glowing 64B Cache Line Block Traveling UP -->
+              <line id="llRamDataGlow" x1="205" y1="0" x2="205" y2="64" stroke="#f59e0b" stroke-width="4" opacity="0" />
+              <g id="llRamDataPkt" opacity="0" transform="translate(205, 32)">
+                <rect x="-26" y="-8" width="52" height="16" rx="4" fill="#f43f5e" stroke="#ffe4e6" stroke-width="1.2" />
+                <text x="0" y="3.5" text-anchor="middle" fill="#fff" font-family="JetBrains Mono" font-size="8.5" font-weight="800">64B LINE</text>
+              </g>
+            </svg>
+            <div class="absolute left-3 flex flex-col">
+              <span class="font-mono text-[10px] text-slate-400">Memory Bus · 100 cyc</span>
+              <span id="llRamBusText" class="font-mono text-[10px] font-semibold text-slate-500">Idle</span>
+            </div>
+            <div class="absolute right-3 text-right">
+              <span id="llPfBusText" class="font-mono text-[10px] text-slate-500">Prefetch Blocked</span>
+            </div>
+          </div>
+
+          <!-- TIER 3: MAIN MEMORY (RAM GRID + POINTER-CHASING SVG OVERLAY) -->
+          <div class="rounded-xl bg-navy-850 border border-slate-700/90 p-3">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <div class="flex items-center gap-2">
+                <span class="font-mono text-[11px] font-bold text-slate-200 uppercase tracking-wider">Main Memory (RAM)</span>
+                <span id="llRamMeta" class="font-mono text-[10px] text-slate-400">Scattered Heap Allocations</span>
+              </div>
+              <span class="font-mono text-[10px] px-2 py-0.5 rounded bg-rose-500/10 text-rose-300 border border-rose-500/25">
+                25% Useful · 75% Wasted Heap
+              </span>
+            </div>
+            <div id="llRamWrapper" class="relative">
+              <div id="llRamGrid" class="grid gap-1.5 relative z-10">
+                <!-- Populated dynamically by JS -->
+              </div>
+              <!-- SVG Overlay for Pointer Chasing Arrows -->
+              <svg id="llPointerSvg" class="absolute inset-0 w-full h-full pointer-events-none z-20 overflow-visible">
+                <defs>
+                  <marker id="ptrArrowActive" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+                    <polygon points="0 0.5, 7 3.5, 0 6.5" fill="#f472b6" />
+                  </marker>
+                  <marker id="ptrArrowVisited" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                    <polygon points="0 0.5, 6 3, 0 5.5" fill="rgba(167, 139, 250, 0.45)" />
+                  </marker>
+                </defs>
+                <g id="llVisitedPaths"></g>
+                <g id="llActivePathGroup"></g>
+              </svg>
+            </div>
+          </div>
+
+          <!-- LIVE NARRATION STRIP (LINKED LIST) -->
+          <div id="llNarrationBox" class="mt-3 rounded-xl bg-slate-950/90 border border-slate-800 border-l-4 border-l-violet-400 px-3 py-2 min-h-[46px] flex items-center">
+            <p id="llNarration" class="text-xs text-slate-300 leading-snug font-medium">Ready to chase linked list pointers across heap memory.</p>
+          </div>
+
+          <!-- LIVE TELEMETRY (LINKED LIST) -->
+          <div class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div class="rounded-xl bg-slate-950/70 border border-slate-800/90 p-2.5">
+              <div class="flex items-center justify-between text-[10px] font-mono text-slate-400 uppercase">
+                <span>Progress</span>
+                <span id="llProgText" class="text-violet-300 font-bold">0 / 32</span>
+              </div>
+              <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden mt-2">
+                <div id="llProgBar" class="h-full bg-gradient-to-r from-violet-500 to-pink-500 transition-all duration-100" style="width: 0%"></div>
+              </div>
+            </div>
+
+            <div class="rounded-xl bg-slate-950/70 border border-slate-800/90 p-2.5">
+              <div class="text-[10px] font-mono text-slate-400 uppercase">Total Cycles</div>
+              <div id="llTotalCycles" class="font-mono text-base font-extrabold text-white mt-0.5">0</div>
+            </div>
+
+            <div class="rounded-xl bg-slate-950/70 border border-slate-800/90 p-2.5">
+              <div class="flex items-center justify-between text-[10px] font-mono text-slate-400 uppercase">
+                <span>L1 Hit Rate</span>
+                <span id="llHitRate" class="text-rose-400 font-bold">0%</span>
+              </div>
+              <div class="font-mono text-[11px] mt-1 flex items-center gap-2">
+                <span class="text-emerald-400"><strong id="llHits">0</strong> H</span>
+                <span class="text-slate-600">/</span>
+                <span class="text-rose-400"><strong id="llMisses">0</strong> M</span>
+              </div>
+            </div>
+
+            <div class="rounded-xl bg-slate-950/70 border border-slate-800/90 p-2.5">
+              <div class="flex items-center justify-between text-[10px] font-mono text-slate-400 uppercase">
+                <span>Active vs Stall</span>
+                <span id="llActivePct" class="text-rose-300 font-bold">0%</span>
+              </div>
+              <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden mt-2 flex">
+                <div id="llActiveBar" class="h-full bg-emerald-400" style="width: 0%"></div>
+                <div id="llStallBar" class="h-full bg-rose-500" style="width: 0%"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- =====================================================================
+         COLLAPSIBLE KEY CONCEPTS & ARCHITECTURE LEGEND FOOTER
+    ====================================================================== -->
+    <footer class="rounded-2xl bg-navy-900/85 border border-slate-800/90 overflow-hidden shadow-xl">
+      <button id="btnToggleConcepts" class="w-full px-4 py-2.5 flex items-center justify-between text-left hover:bg-slate-800/40 transition cursor-pointer">
+        <div class="flex items-center gap-2.5">
+          <span class="w-6 h-6 rounded-lg bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 text-xs font-bold">?</span>
+          <span class="text-xs sm:text-sm font-bold text-slate-200">Key Computer Architecture Concepts &amp; Legend</span>
+          <!-- Compact Legend Pills -->
+          <div class="hidden md:flex items-center gap-3 ml-4 text-[11px] font-mono text-slate-400">
+            <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-400"></span>L1 Hit (4 cyc)</span>
+            <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-rose-500"></span>RAM Miss (100 cyc)</span>
+            <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-cyan-400"></span>Prefetch Stream</span>
+            <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-slate-700 border border-slate-600"></span>Unused Heap Data</span>
+          </div>
+        </div>
+        <svg id="conceptsChevron" class="w-4 h-4 text-slate-400 transition-transform duration-200 rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      <div id="conceptsContent" class="px-4 pb-4 pt-1 border-t border-slate-800/70 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        <div class="rounded-xl bg-slate-950/60 border border-slate-800/80 p-3">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">01</span>
+            <h3 class="text-xs font-bold text-white">64-Byte Cache Lines</h3>
+          </div>
+          <p class="text-[11px] text-slate-400 leading-relaxed">
+            CPUs never fetch a single integer from RAM. Every cache miss transfers an entire aligned <span class="font-mono text-slate-200">64-byte</span> block (4 slots here) across the memory bus, paying the same ~100-cycle DRAM latency regardless of how many slots are actually useful.
+          </p>
+        </div>
+
+        <div class="rounded-xl bg-slate-950/60 border border-slate-800/80 p-3">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">02</span>
+            <h3 class="text-xs font-bold text-white">Spatial Locality in Arrays</h3>
+          </div>
+          <p class="text-[11px] text-slate-400 leading-relaxed">
+            Array elements sit back-to-back in RAM. One cache miss on <span class="font-mono text-cyan-300">arr[0]</span> pulls <span class="font-mono text-cyan-300">arr[0..3]</span> into L1 Cache at once—yielding <strong class="text-emerald-300">3 consecutive 4-cycle L1 hits</strong> immediately afterward (75% hit rate even without prefetching).
+          </p>
+        </div>
+
+        <div class="rounded-xl bg-slate-950/60 border border-slate-800/80 p-3">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300">03</span>
+            <h3 class="text-xs font-bold text-white">Pointer Chasing &amp; Thrashing</h3>
+          </div>
+          <p class="text-[11px] text-slate-400 leading-relaxed">
+            Heap-allocated Linked List nodes are scattered across random RAM addresses. Each 64B fetch brings 75% unrelated heap bytes, evicts older L1 lines (LRU thrashing), and forces a fresh <strong class="text-rose-300">100-cycle CPU stall</strong> on virtually every node.
+          </p>
+        </div>
+
+        <div class="rounded-xl bg-slate-950/60 border border-slate-800/80 p-3">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300">04</span>
+            <h3 class="text-xs font-bold text-white">Hardware Prefetching (MLP)</h3>
+          </div>
+          <p class="text-[11px] text-slate-400 leading-relaxed">
+            Modern cores detect sequential array strides (<span class="font-mono text-cyan-300">+0x40</span>) and overlap future RAM fetches in parallel so cache lines arrive <em>before</em> needed. Pointer chasing creates a strict data dependency (<span class="font-mono text-violet-300">n = n-&gt;next</span>), leaving the prefetcher blind.
+          </p>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- =======================================================================
+       SIMULATION ENGINE & 60FPS RENDERER
+  ======================================================================== -->
+  <script>
+    (() => {
+      'use strict';
+
+      /* =====================================================================
+         1. ARCHITECTURE CONSTANTS & CONFIGURATION
+      ====================================================================== */
+      const L1_HIT_CYCLES = 4;        // Fast L1 data cache access latency
+      const RAM_MISS_CYCLES = 100;    // Main memory (DRAM) fetch latency
+      const SLOTS_PER_LINE = 4;       // 64-byte cache line = 4 visual 16-byte slots
+      const BYTES_PER_LINE = 64;      // 0x40 hex stride per cache line
+      const L1_CAPACITY = 4;          // 4-way LRU L1 Data Cache
+      const BASE_HEX_ADDR = 0x1000;   // Starting address of simulated RAM region
+      const BASE_CYCLES_PER_SEC = 76; // 1.0x simulation speed in simulated cycles/sec
+      const PF_STAGGER_CYCLES = 16;   // 4 hits * 4 cycles = 16 cyc/line consumption rate
+
+      /* =====================================================================
+         2. DOM ELEMENT REFERENCES
+      ====================================================================== */
+      const dom = {
+        globalClock: document.getElementById('globalClockDisplay'),
+        clockDot: document.getElementById('clockDot'),
+        speedupPill: document.getElementById('speedupPill'),
+        speedupText: document.getElementById('speedupText'),
+
+        // Controls
+        btnPlayPause: document.getElementById('btnPlayPause'),
+        iconPlay: document.getElementById('iconPlay'),
+        iconPause: document.getElementById('iconPause'),
+        playPauseLabel: document.getElementById('playPauseLabel'),
+        btnStep: document.getElementById('btnStep'),
+        btnReset: document.getElementById('btnReset'),
+        speedSlider: document.getElementById('speedSlider'),
+        speedValue: document.getElementById('speedValue'),
+        countBtns: document.querySelectorAll('.count-btn'),
+        btnPrefetchToggle: document.getElementById('btnPrefetchToggle'),
+        prefetchTrack: document.getElementById('prefetchTrack'),
+        prefetchThumb: document.getElementById('prefetchThumb'),
+        prefetchLabel: document.getElementById('prefetchLabel'),
+
+        // Concepts drawer
+        btnToggleConcepts: document.getElementById('btnToggleConcepts'),
+        conceptsContent: document.getElementById('conceptsContent'),
+        conceptsChevron: document.getElementById('conceptsChevron'),
+
+        // Array Side
+        arr: {
+          cpuCard: document.getElementById('arrCpuCard'),
+          pfBadge: document.getElementById('arrPrefetchBadge'),
+          regIdx: document.getElementById('arrRegIdx'),
+          regAddr: document.getElementById('arrRegAddr'),
+          regVal: document.getElementById('arrRegVal'),
+          regSum: document.getElementById('arrRegSum'),
+          stateBadge: document.getElementById('arrStateBadge'),
+          stateTitle: document.getElementById('arrStateTitle'),
+          stateCycles: document.getElementById('arrStateCycles'),
+          stateBar: document.getElementById('arrStateBar'),
+          cpuBusDown: document.getElementById('arrCpuBusDown'),
+          cpuBusUp: document.getElementById('arrCpuBusUp'),
+          cpuPktDown: document.getElementById('arrCpuPktDown'),
+          cpuPktUp: document.getElementById('arrCpuPktUp'),
+          cpuBusStatus: document.getElementById('arrCpuBusStatus'),
+          l1Card: document.getElementById('arrL1Card'),
+          l1EventBadge: document.getElementById('arrL1EventBadge'),
+          l1Lines: document.getElementById('arrL1Lines'),
+          ramReqGlow: document.getElementById('arrRamReqGlow'),
+          ramReqPkt: document.getElementById('arrRamReqPkt'),
+          ramDataGlow: document.getElementById('arrRamDataGlow'),
+          ramDataPkt: document.getElementById('arrRamDataPkt'),
+          pfLane: document.getElementById('arrPfLane'),
+          pfPkt: document.getElementById('arrPfPkt'),
+          ramBusText: document.getElementById('arrRamBusText'),
+          pfBusText: document.getElementById('arrPfBusText'),
+          ramGrid: document.getElementById('arrRamGrid'),
+          narrationBox: document.getElementById('arrNarrationBox'),
+          narration: document.getElementById('arrNarration'),
+          progText: document.getElementById('arrProgText'),
+          progBar: document.getElementById('arrProgBar'),
+          totalCycles: document.getElementById('arrTotalCycles'),
+          hitRate: document.getElementById('arrHitRate'),
+          hits: document.getElementById('arrHits'),
+          misses: document.getElementById('arrMisses'),
+          activePct: document.getElementById('arrActivePct'),
+          activeBar: document.getElementById('arrActiveBar'),
+          stallBar: document.getElementById('arrStallBar'),
+        },
+
+        // Linked List Side
+        ll: {
+          cpuCard: document.getElementById('llCpuCard'),
+          pfBadge: document.getElementById('llPrefetchBadge'),
+          regIdx: document.getElementById('llRegIdx'),
+          regAddr: document.getElementById('llRegAddr'),
+          regNext: document.getElementById('llRegNext'),
+          regSum: document.getElementById('llRegSum'),
+          stateBadge: document.getElementById('llStateBadge'),
+          stateTitle: document.getElementById('llStateTitle'),
+          stateCycles: document.getElementById('llStateCycles'),
+          stateBar: document.getElementById('llStateBar'),
+          cpuBusDown: document.getElementById('llCpuBusDown'),
+          cpuBusUp: document.getElementById('llCpuBusUp'),
+          cpuPktDown: document.getElementById('llCpuPktDown'),
+          cpuPktUp: document.getElementById('llCpuPktUp'),
+          cpuBusStatus: document.getElementById('llCpuBusStatus'),
+          l1Card: document.getElementById('llL1Card'),
+          l1EventBadge: document.getElementById('llL1EventBadge'),
+          l1Lines: document.getElementById('llL1Lines'),
+          ramReqGlow: document.getElementById('llRamReqGlow'),
+          ramReqPkt: document.getElementById('llRamReqPkt'),
+          ramDataGlow: document.getElementById('llRamDataGlow'),
+          ramDataPkt: document.getElementById('llRamDataPkt'),
+          pfLane: document.getElementById('llPfLane'),
+          ramBusText: document.getElementById('llRamBusText'),
+          pfBusText: document.getElementById('llPfBusText'),
+          ramWrapper: document.getElementById('llRamWrapper'),
+          ramGrid: document.getElementById('llRamGrid'),
+          pointerSvg: document.getElementById('llPointerSvg'),
+          visitedPaths: document.getElementById('llVisitedPaths'),
+          activePathGroup: document.getElementById('llActivePathGroup'),
+          narrationBox: document.getElementById('llNarrationBox'),
+          narration: document.getElementById('llNarration'),
+          progText: document.getElementById('llProgText'),
+          progBar: document.getElementById('llProgBar'),
+          totalCycles: document.getElementById('llTotalCycles'),
+          hitRate: document.getElementById('llHitRate'),
+          hits: document.getElementById('llHits'),
+          misses: document.getElementById('llMisses'),
+          activePct: document.getElementById('llActivePct'),
+          activeBar: document.getElementById('llActiveBar'),
+          stallBar: document.getElementById('llStallBar'),
+        }
+      };
+
+      /* =====================================================================
+         3. UTILITY HELPERS
+      ====================================================================== */
+      function formatHex(addr) {
+        return '0x' + addr.toString(16).toUpperCase().padStart(4, '0');
+      }
+
+      function lineBaseAddr(lineId) {
+        return BASE_HEX_ADDR + lineId * BYTES_PER_LINE;
+      }
+
+      function slotAddr(lineId, slotIdx) {
+        return lineBaseAddr(lineId) + slotIdx * 16;
+      }
+
+      // Fisher-Yates shuffle for scattered heap allocation
+      function shuffleArray(arr) {
+        const copy = arr.slice();
+        for (let i = copy.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [copy[i], copy[j]] = [copy[j], copy[i]];
+        }
+        return copy;
+      }
+
+      /* =====================================================================
+         4. SIMULATION STATE & DATA STRUCTURES
+      ====================================================================== */
+      const sim = {
+        elementCount: 32,
+        speed: 1.25,
+        prefetcherEnabled: true,
+        isPlaying: false,
+        globalCycle: 0,
+        lastFrameTs: null,
+        arr: null,
+        ll: null,
+      };
+
+      /**
+       * Builds the RAM layout and Core state for either the Array or Linked List.
+       * Both RAM regions have exactly `N` 64-byte cache lines so the spatial
+       * density difference (N/4 contiguous lines vs N scattered lines) is stark.
+       */
+      function createCoreState(type, count) {
+        const totalRamLines = count;
+        const ramLines = [];
+
+        // Initialize empty 64B cache lines in RAM
+        for (let l = 0; l < totalRamLines; l++) {
+          ramLines.push({
+            lineId: l,
+            baseAddr: lineBaseAddr(l),
+            slots: Array.from({ length: SLOTS_PER_LINE }, (_, s) => ({
+              type: type === 'array' ? 'free' : 'heap',
+              label: type === 'array' ? '···' : 'Heap',
+              elemIndex: -1,
+              value: 0,
+              addr: slotAddr(l, s),
+              nextAddr: null,
+              visited: false,
+            }))
+          });
+        }
+
+        // Sequence of logical elements the CPU core will traverse
+        const elements = [];
+
+        if (type === 'array') {
+          // Contiguous layout: arr[0..N-1] packed tightly into lines 0 .. (N/4 - 1)
+          for (let i = 0; i < count; i++) {
+            const lineId = Math.floor(i / SLOTS_PER_LINE);
+            const slotIdx = i % SLOTS_PER_LINE;
+            const val = 10 + ((i * 7 + 3) % 89);
+            const addr = slotAddr(lineId, slotIdx);
+
+            ramLines[lineId].slots[slotIdx] = {
+              type: 'elem',
+              label: `[${i}]`,
+              elemIndex: i,
+              value: val,
+              addr,
+              nextAddr: null,
+              visited: false,
+            };
+
+            elements.push({ index: i, lineId, slotIdx, addr, value: val, nextAddr: null });
+          }
+        } else {
+          // Linked List layout: each node allocated on a distinct shuffled cache line
+          // with a random slot index (0..3), leaving 75% of every 64B block as unrelated heap data.
+          const shuffledLineIds = shuffleArray(Array.from({ length: totalRamLines }, (_, i) => i));
+          // Ensure node 0 isn't always line 0 so pointer chasing is visually vivid immediately
+          if (shuffledLineIds[0] === 0 && shuffledLineIds.length > 2) {
+            [shuffledLineIds[0], shuffledLineIds[2]] = [shuffledLineIds[2], shuffledLineIds[0]];
+          }
+
+          for (let i = 0; i < count; i++) {
+            const lineId = shuffledLineIds[i];
+            const slotIdx = Math.floor(Math.random() * SLOTS_PER_LINE);
+            const val = 10 + ((i * 7 + 3) % 89); // Same values so running sums match!
+            const addr = slotAddr(lineId, slotIdx);
+
+            ramLines[lineId].slots[slotIdx] = {
+              type: 'elem',
+              label: `N${i}`,
+              elemIndex: i,
+              value: val,
+              addr,
+              nextAddr: null,
+              visited: false,
+            };
+
+            elements.push({ index: i, lineId, slotIdx, addr, value: val, nextAddr: null });
+          }
+
+          // Wire up node->next pointers
+          for (let i = 0; i < count; i++) {
+            const next = i + 1 < count ? elements[i + 1].addr : null;
+            elements[i].nextAddr = next;
+            const e = elements[i];
+            ramLines[e.lineId].slots[e.slotIdx].nextAddr = next;
+          }
+        }
+
+        return {
+          type,
+          count,
+          totalRamLines,
+          ramLines,
+          elements,
+          // L1 Data Cache: 4 fixed slots (ways) so visual positions stay stable during LRU evictions
+          l1Ways: Array.from({ length: L1_CAPACITY }, () => null),
+          // Execution State Machine
+          currentIndex: 0,
+          sum: 0,
+          done: false,
+          finishCycle: null,
+          // Active operation
+          op: null, // { kind: 'HIT' | 'MISS' | 'PF_WAIT', elem, startCycle, endCycle, duration, targetWay, prefetchedHit }
+          // Hardware Prefetcher (only effective for sequential stride on Array)
+          strideDetected: false,
+          lastMissedLineId: null,
+          nextPrefetchLineId: 2,
+          lastPrefetchLaunchCycle: -999,
+          prefetchInFlight: [], // [{ lineId, startCycle, readyCycle }]
+          // Telemetry
+          hits: 0,
+          misses: 0,
+          activeCycles: 0,
+          stalledCycles: 0,
+          // Visual persistence timers (timestamps in ms for juicy glow effects)
+          lastHitFlashMs: 0,
+          lastHitWay: -1,
+          lastHitSlot: -1,
+          lastMissFlashMs: 0,
+          lastEvictWay: -1,
+          lastEvictFlashMs: 0,
+          narration: type === 'array'
+            ? 'Ready to traverse contiguous array in RAM.'
+            : 'Ready to chase scattered linked list pointers in RAM.',
+          narrationTone: type === 'array' ? 'cyan' : 'violet',
+        };
+      }
+
+      /* =====================================================================
+         5. L1 CACHE & HARDWARE PREFETCHER LOGIC
+      ====================================================================== */
+      function findInL1(core, lineId) {
+        for (let w = 0; w < L1_CAPACITY; w++) {
+          if (core.l1Ways[w] && core.l1Ways[w].lineId === lineId) {
+            return w;
+          }
+        }
+        return -1;
+      }
+
+      /**
+       * Inserts a 64B cache line into L1 using strict LRU eviction.
+       * Never evicts the cache line currently being read by the CPU.
+       */
+      function insertIntoL1(core, lineId, cycle, isPrefetched) {
+        const existing = findInL1(core, lineId);
+        if (existing !== -1) {
+          core.l1Ways[existing].lastUsed = cycle;
+          return existing;
+        }
+
+        // First look for an empty way
+        let chosenWay = -1;
+        for (let w = 0; w < L1_CAPACITY; w++) {
+          if (!core.l1Ways[w]) {
+            chosenWay = w;
+            break;
+          }
+        }
+
+        // Otherwise evict LRU (excluding currently active element's line)
+        let evictedLine = null;
+        if (chosenWay === -1) {
+          let oldestCycle = Infinity;
+          const protectedLineId = core.op ? core.op.elem.lineId : -1;
+          for (let w = 0; w < L1_CAPACITY; w++) {
+            const entry = core.l1Ways[w];
+            if (entry.lineId === protectedLineId) continue;
+            if (entry.lastUsed < oldestCycle) {
+              oldestCycle = entry.lastUsed;
+              chosenWay = w;
+            }
+          }
+          if (chosenWay === -1) chosenWay = 0;
+          evictedLine = core.l1Ways[chosenWay];
+          core.lastEvictWay = chosenWay;
+          core.lastEvictFlashMs = performance.now();
+        }
+
+        core.l1Ways[chosenWay] = {
+          lineId,
+          baseAddr: lineBaseAddr(lineId),
+          lastUsed: cycle,
+          insertedCycle: cycle,
+          prefetched: !!isPrefetched,
+          wasEviction: !!evictedLine,
+        };
+
+        return chosenWay;
+      }
+
+      /**
+       * Processes Hardware Prefetcher launches and completions on the Array core.
+       * Uses realistic Memory-Level Parallelism (MLP): every prefetched line takes
+       * the full 100-cycle RAM latency, staggered every 16 cycles to match CPU consumption.
+       */
+      function updatePrefetcher(core, cycle) {
+        if (core.type !== 'array' || core.done) return;
+
+        // If user toggled prefetcher OFF mid-run, clear pending prefetches
+        if (!sim.prefetcherEnabled) {
+          if (core.prefetchInFlight.length > 0) {
+            core.prefetchInFlight = [];
+          }
+          return;
+        }
+
+        const totalArrayLines = Math.ceil(core.count / SLOTS_PER_LINE);
+
+        // 1. Complete any prefetches whose 100-cycle RAM fetch has arrived
+        for (let i = core.prefetchInFlight.length - 1; i >= 0; i--) {
+          const pf = core.prefetchInFlight[i];
+          if (cycle >= pf.readyCycle) {
+            // Only insert if CPU hasn't already passed this line
+            const currentLine = core.currentIndex < core.count
+              ? core.elements[core.currentIndex].lineId
+              : totalArrayLines;
+            if (pf.lineId >= currentLine) {
+              insertIntoL1(core, pf.lineId, cycle, true);
+            }
+            core.prefetchInFlight.splice(i, 1);
+          }
+        }
+
+        // 2. Launch new staggered prefetches once sequential stride (+0x40) is detected
+        if (core.strideDetected && core.nextPrefetchLineId < totalArrayLines) {
+          const currentLine = core.currentIndex < core.count
+            ? core.elements[core.currentIndex].lineId
+            : totalArrayLines;
+
+          // Keep nextPrefetchLineId ahead of current line
+          if (core.nextPrefetchLineId <= currentLine) {
+            core.nextPrefetchLineId = currentLine + 1;
+          }
+
+          // Launch at most 1 new line per PF_STAGGER_CYCLES (16 cyc) and cap in-flight queue
+          const canLaunchMore =
+            core.nextPrefetchLineId < totalArrayLines &&
+            (cycle - core.lastPrefetchLaunchCycle) >= PF_STAGGER_CYCLES &&
+            core.prefetchInFlight.length < 7;
+
+          if (canLaunchMore) {
+            const targetLine = core.nextPrefetchLineId;
+            const alreadyInL1 = findInL1(core, targetLine) !== -1;
+            const alreadyInFlight = core.prefetchInFlight.some(p => p.lineId === targetLine);
+
+            if (!alreadyInL1 && !alreadyInFlight) {
+              core.prefetchInFlight.push({
+                lineId: targetLine,
+                startCycle: cycle,
+                readyCycle: cycle + RAM_MISS_CYCLES,
+              });
+              core.lastPrefetchLaunchCycle = cycle;
+            }
+            core.nextPrefetchLineId++;
+          }
+        }
+      }
+
+      /**
+       * Starts the memory access for core.elements[core.currentIndex] at the given global cycle.
+       */
+      function startNextAccess(core, cycle) {
+        if (core.currentIndex >= core.count) {
+          core.done = true;
+          core.finishCycle = cycle;
+          core.op = null;
+          core.prefetchInFlight = [];
+          const hitPct = Math.round((core.hits / core.count) * 100);
+          core.narration = core.type === 'array'
+            ? `DONE in ${Math.round(cycle)} cycles! Sum = ${core.sum} (${hitPct}% L1 Hit Rate).`
+            : `DONE in ${Math.round(cycle)} cycles! Sum = ${core.sum} (${core.misses} RAM stalls from pointer chasing).`;
+          core.narrationTone = 'emerald';
+          return;
+        }
+
+        const elem = core.elements[core.currentIndex];
+        const way = findInL1(core, elem.lineId);
+
+        if (way !== -1) {
+          // L1 CACHE HIT! (4 cycles)
+          const entry = core.l1Ways[way];
+          const wasPrefetchedFirstTouch = entry.prefetched && elem.slotIdx === 0;
+          entry.lastUsed = cycle;
+
+          core.op = {
+            kind: 'HIT',
+            elem,
+            startCycle: cycle,
+            endCycle: cycle + L1_HIT_CYCLES,
+            duration: L1_HIT_CYCLES,
+            targetWay: way,
+            prefetchedHit: wasPrefetchedFirstTouch,
+          };
+
+          core.lastHitFlashMs = performance.now();
+          core.lastHitWay = way;
+          core.lastHitSlot = elem.slotIdx;
+
+          if (core.type === 'array') {
+            if (wasPrefetchedFirstTouch) {
+              const endIdx = Math.min(core.count - 1, elem.index + 3);
+              core.narration = `PREFETCH HIT at ${formatHex(elem.addr)}: Hardware prefetcher already loaded arr[${elem.index}..${endIdx}] into L1! (4 cycles)`;
+              core.narrationTone = 'cyan';
+            } else {
+              core.narration = `L1 HIT at ${formatHex(elem.addr)}: arr[${elem.index}] already resident in L1 Cache via spatial locality! (4 cycles)`;
+              core.narrationTone = 'emerald';
+            }
+          } else {
+            core.narration = `L1 HIT at ${formatHex(elem.addr)}: N${elem.index} found in L1 Cache! (4 cycles)`;
+            core.narrationTone = 'emerald';
+          }
+        } else {
+          // Check if Hardware Prefetcher ALREADY has this line in flight!
+          const inFlightIdx = core.prefetchInFlight.findIndex(p => p.lineId === elem.lineId);
+          if (core.type === 'array' && sim.prefetcherEnabled && inFlightIdx !== -1) {
+            const pf = core.prefetchInFlight[inFlightIdx];
+            const remaining = Math.max(L1_HIT_CYCLES, pf.readyCycle - cycle);
+            core.op = {
+              kind: 'PF_WAIT',
+              elem,
+              startCycle: cycle,
+              endCycle: cycle + remaining,
+              duration: remaining,
+              targetWay: -1,
+              prefetchedHit: true,
+            };
+            core.narration = `PREFETCH IN FLIGHT for ${formatHex(lineBaseAddr(elem.lineId))}: Waiting only ${Math.round(remaining)} cyc for arriving 64B line...`;
+            core.narrationTone = 'cyan';
+            return;
+          }
+
+          // L1 CACHE MISS -> FULL 100-CYCLE RAM FETCH
+          core.op = {
+            kind: 'MISS',
+            elem,
+            startCycle: cycle,
+            endCycle: cycle + RAM_MISS_CYCLES,
+            duration: RAM_MISS_CYCLES,
+            targetWay: -1,
+            prefetchedHit: false,
+          };
+
+          core.lastMissFlashMs = performance.now();
+
+          // Sequential Stride Detector for Array Hardware Prefetcher
+          if (core.type === 'array') {
+            if (core.lastMissedLineId !== null && elem.lineId === core.lastMissedLineId + 1) {
+              core.strideDetected = true;
+              core.nextPrefetchLineId = elem.lineId + 1;
+              // Allow immediate launch of next line on this exact cycle!
+              core.lastPrefetchLaunchCycle = cycle - PF_STAGGER_CYCLES;
+            }
+            core.lastMissedLineId = elem.lineId;
+
+            const endIdx = Math.min(core.count - 1, elem.index + 3);
+            const pfNote = (sim.prefetcherEnabled && core.strideDetected)
+              ? ' Stride +0x40 detected — Prefetcher launching background stream!'
+              : '';
+            core.narration = `L1 MISS at ${formatHex(elem.addr)}: Fetching 64B cache line arr[${elem.index}..${endIdx}] from RAM (100 cycles).${pfNote}`;
+            core.narrationTone = 'amber';
+          } else {
+            const nextStr = elem.nextAddr ? formatHex(elem.nextAddr) : 'NULL';
+            core.narration = `L1 MISS at ${formatHex(elem.addr)}: Chasing N${elem.index} pointer (next→${nextStr}); fetching 64B line, 75% is unrelated heap! (100 cycles)`;
+            core.narrationTone = 'rose';
+          }
+        }
+      }
+
+      /**
+       * Completes the current operation when globalCycle reaches core.op.endCycle.
+       */
+      function finishCurrentOp(core, cycle) {
+        const op = core.op;
+        if (!op) return;
+
+        const elem = op.elem;
+
+        if (op.kind === 'HIT') {
+          core.hits++;
+          core.activeCycles += op.duration;
+        } else if (op.kind === 'PF_WAIT') {
+          // Line was already fetched by prefetcher; remove from queue & load into L1
+          core.prefetchInFlight = core.prefetchInFlight.filter(p => p.lineId !== elem.lineId);
+          const way = insertIntoL1(core, elem.lineId, cycle, true);
+          core.hits++;
+          core.activeCycles += L1_HIT_CYCLES;
+          core.stalledCycles += Math.max(0, op.duration - L1_HIT_CYCLES);
+          core.lastHitFlashMs = performance.now();
+          core.lastHitWay = way;
+          core.lastHitSlot = elem.slotIdx;
+        } else {
+          // Full RAM Miss finished -> place 64B line in L1 Cache
+          const way = insertIntoL1(core, elem.lineId, cycle, false);
+          core.misses++;
+          core.activeCycles += L1_HIT_CYCLES;
+          core.stalledCycles += (RAM_MISS_CYCLES - L1_HIT_CYCLES);
+          core.lastHitWay = way;
+          core.lastHitSlot = elem.slotIdx;
+        }
+
+        // Update ALU running sum and mark RAM slot visited
+        core.sum += elem.value;
+        core.ramLines[elem.lineId].slots[elem.slotIdx].visited = true;
+        core.currentIndex++;
+        core.op = null;
+
+        // Immediately start next element access on the same cycle
+        startNextAccess(core, cycle);
+      }
+
+      /**
+       * Advances a single core forward up to targetCycle (handling multiple rapid 4-cycle hits cleanly).
+       */
+      function advanceCoreToCycle(core, targetCycle) {
+        if (core.done) return;
+
+        // Kick off first access if not yet started
+        if (!core.op) {
+          startNextAccess(core, targetCycle);
+        }
+
+        // Process discrete event boundaries in chronological order up to targetCycle
+        let safety = 0;
+        while (!core.done && core.op && safety < 200) {
+          safety++;
+          // Check earliest prefetcher event or op end
+          let nextPfReady = Infinity;
+          if (core.type === 'array' && sim.prefetcherEnabled) {
+            for (const pf of core.prefetchInFlight) {
+              if (pf.readyCycle < nextPfReady) nextPfReady = pf.readyCycle;
+            }
+          }
+
+          const nextBoundary = Math.min(core.op.endCycle, nextPfReady, targetCycle);
+
+          // Update prefetcher at boundary
+          updatePrefetcher(core, nextBoundary);
+
+          if (core.op && nextBoundary >= core.op.endCycle) {
+            finishCurrentOp(core, core.op.endCycle);
+          } else if (nextBoundary >= targetCycle) {
+            break;
+          }
+        }
+      }
+
+      /* =====================================================================
+         6. DOM BUILDERS FOR RAM GRIDS & L1 CACHE LINES
+      ====================================================================== */
+      function buildRamGridDOM(core, container) {
+        container.innerHTML = '';
+
+        // Choose crisp responsive column layout based on elementCount
+        if (core.count === 16) {
+          container.className = 'grid grid-cols-2 sm:grid-cols-2 gap-1.5 relative z-10';
+        } else {
+          container.className = 'grid grid-cols-2 sm:grid-cols-4 gap-1.5 relative z-10';
+        }
+
+        const isCompact = core.count >= 32;
+
+        core.ramLines.forEach((line) => {
+          const lineEl = document.createElement('div');
+          lineEl.id = `${core.type}-ram-line-${line.lineId}`;
+          lineEl.className = 'rounded-lg bg-slate-950/75 border border-slate-800/90 p-1 transition-all duration-150';
+
+          // Line header (Hex base address + tiny L1 badge)
+          const header = document.createElement('div');
+          header.className = 'flex items-center justify-between px-0.5 mb-1';
+          header.innerHTML = `
+            <span class="font-mono ${isCompact ? 'text-[9px]' : 'text-[10px]'} text-slate-500 font-semibold">${formatHex(line.baseAddr)}</span>
+            <span id="${core.type}-ram-l1tag-${line.lineId}" class="font-mono text-[8px] font-bold px-1 rounded hidden">L1</span>
+          `;
+          lineEl.appendChild(header);
+
+          // 4 slots representing the 64-byte cache line
+          const slotsRow = document.createElement('div');
+          slotsRow.className = 'grid grid-cols-4 gap-0.5';
+
+          line.slots.forEach((slot, sIdx) => {
+            const slotEl = document.createElement('div');
+            slotEl.id = `${core.type}-ram-slot-${line.lineId}-${sIdx}`;
+
+            if (slot.type === 'elem') {
+              slotEl.dataset.elemIndex = slot.elemIndex;
+              slotEl.title = core.type === 'array'
+                ? `arr[${slot.elemIndex}] @ ${formatHex(slot.addr)} (val=${slot.value})`
+                : `Node N${slot.elemIndex} @ ${formatHex(slot.addr)} (val=${slot.value}, next=${slot.nextAddr ? formatHex(slot.nextAddr) : 'NULL'})`;
+            } else {
+              slotEl.title = core.type === 'array'
+                ? `Free RAM @ ${formatHex(slot.addr)}`
+                : `Unrelated Heap Data @ ${formatHex(slot.addr)} (wasted cache bandwidth)`;
+            }
+
+            slotEl.className = `ram-slot rounded ${isCompact ? 'h-5 text-[8.5px]' : 'h-6 text-[10px]'} font-mono font-bold flex items-center justify-center border select-none truncate`;
+            slotEl.textContent = slot.type === 'elem' ? slot.label : (core.type === 'array' ? '·' : '·');
+            slotsRow.appendChild(slotEl);
+          });
+
+          lineEl.appendChild(slotsRow);
+          container.appendChild(lineEl);
+        });
+      }
+
+      function buildL1CacheDOM(core, container) {
+        container.innerHTML = '';
+        for (let w = 0; w < L1_CAPACITY; w++) {
+          const wayEl = document.createElement('div');
+          wayEl.id = `${core.type}-l1-way-${w}`;
+          wayEl.className = 'rounded-lg bg-slate-950/80 border border-slate-800/90 p-1.5 transition-all duration-150';
+          wayEl.innerHTML = `
+            <div class="flex items-center justify-between mb-1">
+              <div class="flex items-center gap-1.5">
+                <span class="font-mono text-[9px] text-slate-500">W${w}</span>
+                <span id="${core.type}-l1-tag-${w}" class="font-mono text-[10px] font-bold text-slate-500">EMPTY</span>
+              </div>
+              <span id="${core.type}-l1-meta-${w}" class="font-mono text-[8.5px] px-1 rounded text-slate-500">--</span>
+            </div>
+            <div class="grid grid-cols-4 gap-1" id="${core.type}-l1-slots-${w}">
+              <div class="h-5 rounded bg-slate-900/90 border border-slate-800/80 flex items-center justify-center font-mono text-[9px] text-slate-600">-</div>
+              <div class="h-5 rounded bg-slate-900/90 border border-slate-800/80 flex items-center justify-center font-mono text-[9px] text-slate-600">-</div>
+              <div class="h-5 rounded bg-slate-900/90 border border-slate-800/80 flex items-center justify-center font-mono text-[9px] text-slate-600">-</div>
+              <div class="h-5 rounded bg-slate-900/90 border border-slate-800/80 flex items-center justify-center font-mono text-[9px] text-slate-600">-</div>
+            </div>
+          `;
+          container.appendChild(wayEl);
+        }
+      }
+
+      /* =====================================================================
+         7. RENDERING FUNCTIONS (60FPS VISUAL SYNC)
+      ====================================================================== */
+      function renderCore(core, ui, nowMs) {
+        const op = core.op;
+        const cycle = core.done ? core.finishCycle : sim.globalCycle;
+
+        // 1. CPU Registers & Prefetcher Badge
+        if (core.type === 'array') {
+          const dispElem = op ? op.elem : (core.currentIndex > 0 ? core.elements[core.currentIndex - 1] : core.elements[0]);
+          ui.regIdx.textContent = core.done ? `${core.count}` : `${dispElem.index}`;
+          ui.regAddr.textContent = formatHex(dispElem.addr);
+          ui.regVal.textContent = (core.currentIndex > 0 || core.done)
+            ? `${core.elements[Math.min(core.count - 1, Math.max(0, core.currentIndex - (op ? 0 : 1)))].value}`
+            : '--';
+          ui.regSum.textContent = core.sum;
+
+          // Prefetcher Status Badge
+          if (!sim.prefetcherEnabled) {
+            ui.pfBadge.className = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-[10px] font-semibold bg-slate-800/90 text-slate-500 border border-slate-700/80';
+            ui.pfBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-slate-600"></span><span>PREFETCHER: OFF</span>`;
+          } else if (core.done) {
+            ui.pfBadge.className = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/35';
+            ui.pfBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span><span>PREFETCH COMPLETE</span>`;
+          } else if (core.prefetchInFlight.length > 0) {
+            const nextPf = core.prefetchInFlight[0];
+            ui.pfBadge.className = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-[10px] font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-400/50 glow-cyan';
+            ui.pfBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-cyan-300 animate-ping"></span><span>PREFETCHING ${formatHex(lineBaseAddr(nextPf.lineId))}</span>`;
+          } else {
+            ui.pfBadge.className = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-[10px] font-semibold bg-cyan-500/10 text-cyan-300/80 border border-cyan-500/25';
+            ui.pfBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span><span>TRAINING STRIDE...</span>`;
+          }
+        } else {
+          const dispElem = op ? op.elem : (core.currentIndex > 0 ? core.elements[core.currentIndex - 1] : core.elements[0]);
+          ui.regIdx.textContent = core.done ? 'NULL' : `N${dispElem.index}`;
+          ui.regAddr.textContent = core.done ? '0x0000' : formatHex(dispElem.addr);
+          ui.regNext.textContent = dispElem.nextAddr ? formatHex(dispElem.nextAddr) : 'NULL';
+          ui.regSum.textContent = core.sum;
+
+          if (!sim.prefetcherEnabled) {
+            ui.pfBadge.className = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-[10px] font-semibold bg-slate-800/90 text-slate-500 border border-slate-700/80';
+            ui.pfBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-slate-600"></span><span>PREFETCHER: OFF</span>`;
+          } else {
+            ui.pfBadge.className = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-[10px] font-semibold bg-amber-500/10 text-amber-300/90 border border-amber-500/30';
+            ui.pfBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span><span>IDLE (Unpredictable Ptr)</span>`;
+          }
+        }
+
+        // 2. CPU State Badge & Progress Bar
+        ui.cpuCard.classList.remove('animate-stall', 'border-emerald-500/60', 'border-blue-500/50');
+        if (core.done) {
+          ui.cpuCard.classList.add('border-blue-500/50');
+          ui.stateBadge.className = 'rounded-lg px-2.5 py-1.5 border border-blue-400/50 bg-blue-500/15 flex flex-col justify-center min-h-[44px]';
+          ui.stateTitle.className = 'font-mono text-[11px] font-extrabold text-blue-300';
+          ui.stateTitle.textContent = '✓ DONE';
+          ui.stateCycles.textContent = `${Math.round(core.finishCycle)} cyc`;
+          ui.stateBar.className = 'h-full bg-blue-400';
+          ui.stateBar.style.width = '100%';
+        } else if (op && op.kind === 'HIT') {
+          ui.cpuCard.classList.add('border-emerald-500/60');
+          const pct = Math.min(100, Math.max(12, ((cycle - op.startCycle) / op.duration) * 100));
+          ui.stateBadge.className = 'rounded-lg px-2.5 py-1.5 border border-emerald-400/60 bg-emerald-500/15 glow-emerald flex flex-col justify-center min-h-[44px]';
+          ui.stateTitle.className = 'font-mono text-[11px] font-extrabold text-emerald-300';
+          ui.stateTitle.textContent = op.prefetchedHit ? 'PREFETCH HIT (4c)' : 'L1 HIT (4 cyc)';
+          ui.stateCycles.textContent = `${Math.min(4, Math.ceil(cycle - op.startCycle))} / 4 cyc`;
+          ui.stateBar.className = 'h-full bg-emerald-400';
+          ui.stateBar.style.width = `${pct}%`;
+        } else if (op && op.kind === 'PF_WAIT') {
+          const elapsed = Math.max(0, cycle - op.startCycle);
+          const pct = Math.min(100, (elapsed / op.duration) * 100);
+          ui.stateBadge.className = 'rounded-lg px-2.5 py-1.5 border border-cyan-400/60 bg-cyan-500/15 flex flex-col justify-center min-h-[44px]';
+          ui.stateTitle.className = 'font-mono text-[10.5px] font-extrabold text-cyan-300';
+          ui.stateTitle.textContent = 'PREFETCH WAIT';
+          ui.stateCycles.textContent = `${Math.round(elapsed)} / ${Math.round(op.duration)}c`;
+          ui.stateBar.className = 'h-full bg-cyan-400';
+          ui.stateBar.style.width = `${pct}%`;
+        } else if (op && op.kind === 'MISS') {
+          ui.cpuCard.classList.add('animate-stall');
+          const elapsed = Math.max(0, cycle - op.startCycle);
+          const pct = Math.min(100, (elapsed / op.duration) * 100);
+          ui.stateBadge.className = 'rounded-lg px-2.5 py-1.5 border border-rose-500/70 bg-rose-500/15 glow-rose flex flex-col justify-center min-h-[44px]';
+          ui.stateTitle.className = 'font-mono text-[10.5px] font-extrabold text-rose-300';
+          ui.stateTitle.textContent = 'STALLED: RAM FETCH';
+          ui.stateCycles.textContent = `${Math.round(elapsed)} / 100c`;
+          ui.stateBar.className = 'h-full bg-gradient-to-r from-rose-500 to-amber-400';
+          ui.stateBar.style.width = `${pct}%`;
+        }
+
+        // 3. Animated CPU <-> L1 Bus
+        const recentHit = (nowMs - core.lastHitFlashMs) < 220;
+        const recentMiss = (nowMs - core.lastMissFlashMs) < 260;
+
+        if (!core.done && (recentHit || (op && op.kind === 'HIT'))) {
+          const t = op && op.kind === 'HIT'
+            ? Math.min(1, (cycle - op.startCycle) / op.duration)
+            : Math.min(1, (nowMs - core.lastHitFlashMs) / 220);
+          ui.cpuBusUp.setAttribute('opacity', '0.95');
+          ui.cpuBusDown.setAttribute('opacity', '0.25');
+          ui.cpuPktUp.setAttribute('cy', String(34 - t * 32));
+          ui.cpuPktUp.setAttribute('opacity', '1');
+          ui.cpuPktDown.setAttribute('opacity', '0');
+          ui.cpuBusStatus.textContent = 'HIT ↑ 4 cyc';
+          ui.cpuBusStatus.className = 'absolute right-3 font-mono text-[10px] font-bold text-emerald-400 opacity-100';
+        } else if (!core.done && op && op.kind === 'MISS' && (cycle - op.startCycle) < 18) {
+          const t = (cycle - op.startCycle) / 18;
+          ui.cpuBusDown.setAttribute('opacity', '0.9');
+          ui.cpuBusUp.setAttribute('opacity', '0.15');
+          ui.cpuPktDown.setAttribute('cy', String(2 + t * 32));
+          ui.cpuPktDown.setAttribute('opacity', '1');
+          ui.cpuPktUp.setAttribute('opacity', '0');
+          ui.cpuBusStatus.textContent = 'MISS ↓';
+          ui.cpuBusStatus.className = 'absolute right-3 font-mono text-[10px] font-bold text-rose-400 opacity-100';
+        } else {
+          ui.cpuBusDown.setAttribute('opacity', '0.2');
+          ui.cpuBusUp.setAttribute('opacity', '0.2');
+          ui.cpuPktDown.setAttribute('opacity', '0');
+          ui.cpuPktUp.setAttribute('opacity', '0');
+          ui.cpuBusStatus.classList.remove('opacity-100');
+          ui.cpuBusStatus.classList.add('opacity-0');
+        }
+
+        // 4. L1 Data Cache 4 Ways (LRU order + hit/miss/evict highlights)
+        const rankedWays = core.l1Ways
+          .map((e, w) => ({ w, lastUsed: e ? e.lastUsed : -1 }))
+          .filter(x => x.lastUsed >= 0)
+          .sort((a, b) => b.lastUsed - a.lastUsed);
+        const lruWayIdx = rankedWays.length === L1_CAPACITY ? rankedWays[rankedWays.length - 1].w : -1;
+        const mruWayIdx = rankedWays.length > 0 ? rankedWays[0].w : -1;
+
+        // L1 header event badge
+        if (core.done) {
+          ui.l1EventBadge.textContent = 'IDLE';
+          ui.l1EventBadge.className = 'font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-400';
+        } else if (recentHit || (op && op.kind === 'HIT')) {
+          ui.l1EventBadge.textContent = 'CACHE HIT!';
+          ui.l1EventBadge.className = 'font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/25 text-emerald-300 border border-emerald-400/50';
+        } else if (op && op.kind === 'MISS') {
+          ui.l1EventBadge.textContent = 'CACHE MISS';
+          ui.l1EventBadge.className = 'font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-rose-500/25 text-rose-300 border border-rose-400/50';
+        } else if (op && op.kind === 'PF_WAIT') {
+          ui.l1EventBadge.textContent = 'FILLING...';
+          ui.l1EventBadge.className = 'font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-400/40';
+        }
+
+        for (let w = 0; w < L1_CAPACITY; w++) {
+          const entry = core.l1Ways[w];
+          const wayEl = document.getElementById(`${core.type}-l1-way-${w}`);
+          const tagEl = document.getElementById(`${core.type}-l1-tag-${w}`);
+          const metaEl = document.getElementById(`${core.type}-l1-meta-${w}`);
+          const slotsWrap = document.getElementById(`${core.type}-l1-slots-${w}`);
+
+          const isHitWay = !core.done && recentHit && core.lastHitWay === w;
+          const isRecentEvict = (nowMs - core.lastEvictFlashMs) < 420 && core.lastEvictWay === w;
+
+          if (!entry) {
+            wayEl.className = 'rounded-lg bg-slate-950/60 border border-slate-800/80 p-1.5 transition-all duration-150';
+            tagEl.textContent = 'EMPTY';
+            tagEl.className = 'font-mono text-[10px] font-bold text-slate-600';
+            metaEl.textContent = '--';
+            metaEl.className = 'font-mono text-[8.5px] px-1 rounded text-slate-600';
+            for (let s = 0; s < SLOTS_PER_LINE; s++) {
+              const cell = slotsWrap.children[s];
+              cell.textContent = '-';
+              cell.className = 'h-5 rounded bg-slate-900/70 border border-slate-800/70 flex items-center justify-center font-mono text-[9px] text-slate-700';
+            }
+            continue;
+          }
+
+          // Populated L1 cache line
+          if (isHitWay) {
+            wayEl.className = 'rounded-lg bg-emerald-950/50 border border-emerald-400/80 p-1.5 glow-emerald transition-all duration-100';
+          } else if (isRecentEvict) {
+            wayEl.className = 'rounded-lg bg-amber-950/35 border border-amber-400/80 p-1.5 flash-evict transition-all duration-150';
+          } else if (entry.prefetched && (cycle - entry.insertedCycle) < 28) {
+            wayEl.className = 'rounded-lg bg-cyan-950/40 border border-cyan-400/60 p-1.5 transition-all duration-150';
+          } else {
+            wayEl.className = 'rounded-lg bg-slate-900/90 border border-slate-700/85 p-1.5 transition-all duration-150';
+          }
+
+          tagEl.textContent = formatHex(entry.baseAddr);
+          tagEl.className = `font-mono text-[10px] font-bold ${isHitWay ? 'text-emerald-300' : (entry.prefetched ? 'text-cyan-300' : 'text-slate-200')}`;
+
+          if (isRecentEvict) {
+            metaEl.textContent = 'EVICT→NEW';
+            metaEl.className = 'font-mono text-[8px] font-bold px-1 rounded bg-amber-500/20 text-amber-300';
+          } else if (entry.prefetched && w !== mruWayIdx) {
+            metaEl.textContent = 'PREFETCH';
+            metaEl.className = 'font-mono text-[8px] font-bold px-1 rounded bg-cyan-500/20 text-cyan-300';
+          } else if (w === mruWayIdx) {
+            metaEl.textContent = 'MRU';
+            metaEl.className = 'font-mono text-[8px] font-bold px-1 rounded bg-emerald-500/15 text-emerald-300';
+          } else if (w === lruWayIdx) {
+            metaEl.textContent = 'LRU';
+            metaEl.className = 'font-mono text-[8px] font-bold px-1 rounded bg-slate-800 text-amber-300/80';
+          } else {
+            metaEl.textContent = '64B';
+            metaEl.className = 'font-mono text-[8px] px-1 rounded text-slate-400';
+          }
+
+          const ramLine = core.ramLines[entry.lineId];
+          for (let s = 0; s < SLOTS_PER_LINE; s++) {
+            const slot = ramLine.slots[s];
+            const cell = slotsWrap.children[s];
+            const isSlotHit = isHitWay && core.lastHitSlot === s;
+
+            if (slot.type === 'elem') {
+              cell.textContent = slot.label;
+              if (isSlotHit) {
+                cell.className = 'h-5 rounded bg-emerald-400 text-slate-950 border border-emerald-200 flex items-center justify-center font-mono text-[9.5px] font-extrabold scale-105 transition-transform';
+              } else if (slot.visited) {
+                cell.className = core.type === 'array'
+                  ? 'h-5 rounded bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 flex items-center justify-center font-mono text-[9px] font-bold'
+                  : 'h-5 rounded bg-violet-500/25 text-violet-200 border border-violet-500/45 flex items-center justify-center font-mono text-[9px] font-bold';
+              } else {
+                cell.className = core.type === 'array'
+                  ? 'h-5 rounded bg-cyan-500/30 text-white border border-cyan-400/60 flex items-center justify-center font-mono text-[9px] font-bold'
+                  : 'h-5 rounded bg-violet-500/35 text-white border border-violet-400/65 flex items-center justify-center font-mono text-[9px] font-bold';
+              }
+            } else {
+              cell.textContent = 'Heap';
+              cell.className = 'h-5 rounded bg-slate-950/80 border border-slate-800/70 flex items-center justify-center font-mono text-[8px] text-slate-600';
+            }
+          }
+        }
+
+        // 5. Animated L1 <-> Main RAM Bus (100-cycle stall visualization)
+        if (!core.done && op && op.kind === 'MISS') {
+          const progress = Math.min(1, Math.max(0, (cycle - op.startCycle) / op.duration));
+          if (progress < 0.25) {
+            // Phase 1 (0..25%): Address Request travels DOWN to RAM
+            const p = progress / 0.25;
+            ui.ramReqGlow.setAttribute('opacity', '0.9');
+            ui.ramReqPkt.setAttribute('cy', String(4 + p * 56));
+            ui.ramReqPkt.setAttribute('opacity', '1');
+            ui.ramDataGlow.setAttribute('opacity', '0');
+            ui.ramDataPkt.setAttribute('opacity', '0');
+            ui.ramBusText.textContent = `Req ${formatHex(lineBaseAddr(op.elem.lineId))} ↓`;
+            ui.ramBusText.className = 'font-mono text-[10px] font-bold text-rose-400';
+          } else if (progress < 0.42) {
+            // Phase 2 (25..42%): DRAM Row Activation / CAS Latency
+            ui.ramReqGlow.setAttribute('opacity', '0.35');
+            ui.ramReqPkt.setAttribute('opacity', '0');
+            ui.ramDataGlow.setAttribute('opacity', '0.3');
+            ui.ramDataPkt.setAttribute('transform', 'translate(205, 56)');
+            ui.ramDataPkt.setAttribute('opacity', '0.85');
+            ui.ramBusText.textContent = `DRAM Reading 64B...`;
+            ui.ramBusText.className = 'font-mono text-[10px] font-bold text-amber-300';
+          } else {
+            // Phase 3 (42..100%): 64B Cache Line Block travels UP to L1
+            const p = (progress - 0.42) / 0.58;
+            const y = 56 - p * 48;
+            ui.ramReqGlow.setAttribute('opacity', '0');
+            ui.ramReqPkt.setAttribute('opacity', '0');
+            ui.ramDataGlow.setAttribute('opacity', '0.95');
+            ui.ramDataPkt.setAttribute('transform', `translate(205, ${y.toFixed(1)})`);
+            ui.ramDataPkt.setAttribute('opacity', '1');
+            ui.ramBusText.textContent = `Fetching 64B ↑ (${Math.round(progress * 100)}%)`;
+            ui.ramBusText.className = 'font-mono text-[10px] font-bold text-amber-300';
+          }
+        } else {
+          ui.ramReqGlow.setAttribute('opacity', '0');
+          ui.ramReqPkt.setAttribute('opacity', '0');
+          ui.ramDataGlow.setAttribute('opacity', '0');
+          ui.ramDataPkt.setAttribute('opacity', '0');
+          ui.ramBusText.textContent = core.done ? 'Complete' : 'Idle (L1 Serving CPU)';
+          ui.ramBusText.className = 'font-mono text-[10px] text-slate-500';
+        }
+
+        // Array Dedicated Hardware Prefetch Bus Lane
+        if (core.type === 'array') {
+          if (sim.prefetcherEnabled && !core.done && core.prefetchInFlight.length > 0) {
+            const leadPf = core.prefetchInFlight[0];
+            const pfProg = Math.min(1, Math.max(0, (cycle - leadPf.startCycle) / RAM_MISS_CYCLES));
+            const y = 56 - pfProg * 48;
+            ui.pfLane.setAttribute('opacity', '0.85');
+            ui.pfPkt.setAttribute('transform', `translate(275, ${y.toFixed(1)})`);
+            ui.pfPkt.setAttribute('opacity', '1');
+            ui.pfBusText.textContent = `BG Stream: ${core.prefetchInFlight.length} line${core.prefetchInFlight.length > 1 ? 's' : ''} ↑`;
+            ui.pfBusText.className = 'font-mono text-[10px] font-bold text-cyan-300';
+          } else {
+            ui.pfLane.setAttribute('opacity', sim.prefetcherEnabled ? '0.25' : '0.08');
+            ui.pfPkt.setAttribute('opacity', '0');
+            ui.pfBusText.textContent = sim.prefetcherEnabled ? 'Prefetch Lane Ready' : 'Prefetch OFF';
+            ui.pfBusText.className = 'font-mono text-[10px] text-slate-500';
+          }
+        } else {
+          ui.pfLane.setAttribute('opacity', sim.prefetcherEnabled ? '0.18' : '0.06');
+          ui.pfBusText.textContent = sim.prefetcherEnabled ? 'Blocked by Ptr Chain' : 'Prefetch OFF';
+        }
+
+        // 6. Main Memory (RAM Grid) States
+        const inL1Set = new Set(core.l1Ways.filter(Boolean).map(e => e.lineId));
+        const pfLineSet = new Set(core.prefetchInFlight.map(p => p.lineId));
+        const activeLineId = (!core.done && op) ? op.elem.lineId : -1;
+        const activeElemIdx = (!core.done && op) ? op.elem.index : -1;
+        const isFetchingActive = !core.done && op && op.kind === 'MISS';
+
+        for (let l = 0; l < core.totalRamLines; l++) {
+          const lineEl = document.getElementById(`${core.type}-ram-line-${l}`);
+          const l1TagEl = document.getElementById(`${core.type}-ram-l1tag-${l}`);
+          if (!lineEl) continue;
+
+          const inL1 = inL1Set.has(l);
+          const inPf = pfLineSet.has(l);
+          const isActiveLine = (l === activeLineId);
+
+          if (isActiveLine && isFetchingActive) {
+            lineEl.className = 'rounded-lg bg-rose-950/55 border border-rose-400/90 p-1 glow-rose transition-all duration-100';
+          } else if (isActiveLine) {
+            lineEl.className = 'rounded-lg bg-emerald-950/45 border border-emerald-400/80 p-1 transition-all duration-100';
+          } else if (inPf) {
+            lineEl.className = 'rounded-lg bg-cyan-950/40 border border-cyan-400/70 p-1 transition-all duration-150';
+          } else if (inL1) {
+            lineEl.className = 'rounded-lg bg-slate-900/95 border border-emerald-500/45 p-1 transition-all duration-150';
+          } else {
+            lineEl.className = 'rounded-lg bg-slate-950/75 border border-slate-800/85 p-1 transition-all duration-150';
+          }
+
+          if (inL1) {
+            l1TagEl.textContent = 'IN L1';
+            l1TagEl.className = 'font-mono text-[8px] font-bold px-1 rounded bg-emerald-500/20 text-emerald-300';
+          } else if (inPf) {
+            l1TagEl.textContent = 'PF↑';
+            l1TagEl.className = 'font-mono text-[8px] font-bold px-1 rounded bg-cyan-500/25 text-cyan-300';
+          } else if (isActiveLine && isFetchingActive) {
+            l1TagEl.textContent = 'FETCH';
+            l1TagEl.className = 'font-mono text-[8px] font-bold px-1 rounded bg-rose-500/25 text-rose-300';
+          } else {
+            l1TagEl.className = 'hidden';
+          }
+
+          const lineObj = core.ramLines[l];
+          const isCompact = core.count >= 32;
+          const sizeCls = isCompact ? 'h-5 text-[8.5px]' : 'h-6 text-[10px]';
+
+          for (let s = 0; s < SLOTS_PER_LINE; s++) {
+            const slot = lineObj.slots[s];
+            const slotEl = document.getElementById(`${core.type}-ram-slot-${l}-${s}`);
+            if (!slotEl) continue;
+
+            if (slot.type === 'elem') {
+              const isCurrent = (slot.elemIndex === activeElemIdx);
+              if (isCurrent) {
+                slotEl.className = isFetchingActive
+                  ? `ram-slot rounded ${sizeCls} font-mono font-extrabold flex items-center justify-center border bg-amber-400 text-slate-950 border-amber-200 scale-105`
+                  : `ram-slot rounded ${sizeCls} font-mono font-extrabold flex items-center justify-center border bg-emerald-400 text-slate-950 border-emerald-200 scale-105`;
+              } else if (slot.visited) {
+                slotEl.className = core.type === 'array'
+                  ? `ram-slot rounded ${sizeCls} font-mono font-bold flex items-center justify-center border bg-cyan-500/25 text-cyan-200 border-cyan-500/45`
+                  : `ram-slot rounded ${sizeCls} font-mono font-bold flex items-center justify-center border bg-violet-500/25 text-violet-200 border-violet-500/45`;
+              } else {
+                slotEl.className = core.type === 'array'
+                  ? `ram-slot rounded ${sizeCls} font-mono font-semibold flex items-center justify-center border bg-cyan-950/60 text-cyan-400/90 border-cyan-800/70`
+                  : `ram-slot rounded ${sizeCls} font-mono font-semibold flex items-center justify-center border bg-violet-950/60 text-violet-300/90 border-violet-800/70`;
+              }
+            } else {
+              // Unused heap or free RAM
+              if (isActiveLine && isFetchingActive) {
+                // Highlight wasted heap bytes fetched along with the node!
+                slotEl.className = `ram-slot rounded ${sizeCls} font-mono flex items-center justify-center border bg-rose-950/40 text-rose-300/45 border-rose-800/50`;
+              } else {
+                slotEl.className = `ram-slot rounded ${sizeCls} font-mono flex items-center justify-center border bg-slate-900/55 text-slate-700 border-slate-800/60`;
+              }
+            }
+          }
+        }
+
+        // 7. Live Narration Strip
+        const toneBorders = {
+          cyan: 'border-l-cyan-400',
+          emerald: 'border-l-emerald-400',
+          amber: 'border-l-amber-400',
+          rose: 'border-l-rose-500',
+          violet: 'border-l-violet-400',
+        };
+        ui.narrationBox.className = `mt-3 rounded-xl bg-slate-950/90 border border-slate-800 border-l-4 ${toneBorders[core.narrationTone] || 'border-l-slate-500'} px-3 py-2 min-h-[46px] flex items-center`;
+        ui.narration.textContent = core.narration;
+
+        // 8. Synchronized Live Telemetry
+        const completed = core.currentIndex;
+        const progPct = (completed / core.count) * 100;
+        ui.progText.textContent = `${completed} / ${core.count}`;
+        ui.progBar.style.width = `${progPct.toFixed(1)}%`;
+
+        ui.totalCycles.textContent = Math.round(cycle).toLocaleString();
+
+        const totalAccesses = core.hits + core.misses;
+        const hitRate = totalAccesses > 0 ? ((core.hits / totalAccesses) * 100) : 0;
+        ui.hits.textContent = core.hits;
+        ui.misses.textContent = core.misses;
+        ui.hitRate.textContent = `${hitRate.toFixed(0)}%`;
+
+        // Live active vs stalled cycle calculation (including in-progress op)
+        let liveActive = core.activeCycles;
+        let liveStall = core.stalledCycles;
+        if (!core.done && op) {
+          const elapsed = Math.max(0, cycle - op.startCycle);
+          if (op.kind === 'HIT') {
+            liveActive += elapsed;
+          } else {
+            liveStall += elapsed;
+          }
+        }
+        const liveTotal = liveActive + liveStall;
+        const activePct = liveTotal > 0 ? (liveActive / liveTotal) * 100 : 0;
+        const stallPct = liveTotal > 0 ? (liveStall / liveTotal) * 100 : 0;
+
+        ui.activePct.textContent = `${activePct.toFixed(0)}% Act`;
+        ui.activeBar.style.width = `${activePct.toFixed(1)}%`;
+        ui.stallBar.style.width = `${stallPct.toFixed(1)}%`;
+      }
+
+      /**
+       * Renders SVG pointer-chasing Bezier arrows over the Linked List RAM Grid.
+       * Connects previously traversed nodes faintly and highlights the active hop brightly.
+       */
+      function renderLinkedListPointers() {
+        const core = sim.ll;
+        const wrapper = dom.ll.ramWrapper;
+        const visitedGroup = dom.ll.visitedPaths;
+        const activeGroup = dom.ll.activePathGroup;
+
+        if (!wrapper || !core) return;
+        const wrapRect = wrapper.getBoundingClientRect();
+        if (wrapRect.width === 0 || wrapRect.height === 0) return;
+
+        // Helper to get center coordinates of a node slot relative to wrapper
+        function getNodeCenter(idx) {
+          const e = core.elements[idx];
+          const el = document.getElementById(`ll-ram-slot-${e.lineId}-${e.slotIdx}`);
+          if (!el) return null;
+          const r = el.getBoundingClientRect();
+          return {
+            x: r.left - wrapRect.left + r.width / 2,
+            y: r.top - wrapRect.top + r.height / 2,
+          };
+        }
+
+        // Build curved path between two points
+        function makeCurvePath(p1, p2) {
+          const dx = p2.x - p1.x;
+          const dy = p2.y - p1.y;
+          const dist = Math.hypot(dx, dy) || 1;
+          const curveOffset = Math.min(34, dist * 0.22);
+          // Perpendicular control point for a smooth arc
+          const cx = (p1.x + p2.x) / 2 - (dy / dist) * curveOffset;
+          const cy = (p1.y + p2.y) / 2 + (dx / dist) * curveOffset;
+          return `M ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} Q ${cx.toFixed(1)} ${cy.toFixed(1)} ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+        }
+
+        // Render recent trail (up to last 6 hops to keep visual crisp and uncluttered)
+        let visitedHtml = '';
+        const currentIdx = core.done ? core.count - 1 : core.currentIndex;
+        const startTrail = Math.max(0, currentIdx - 6);
+        for (let i = startTrail; i < currentIdx; i++) {
+          if (i + 1 >= core.count) break;
+          const p1 = getNodeCenter(i);
+          const p2 = getNodeCenter(i + 1);
+          if (!p1 || !p2) continue;
+          const fade = 0.16 + ((i - startTrail + 1) / Math.max(1, currentIdx - startTrail)) * 0.28;
+          visitedHtml += `<path d="${makeCurvePath(p1, p2)}" fill="none" stroke="rgba(167, 139, 250, ${fade.toFixed(2)})" stroke-width="1.4" marker-end="url(#ptrArrowVisited)" />`;
+        }
+        visitedGroup.innerHTML = visitedHtml;
+
+        // Render active glowing jump (from previous node -> current fetched node, OR current -> next)
+        let activeHtml = '';
+        if (!core.done && core.currentIndex > 0 && core.currentIndex < core.count) {
+          const pPrev = getNodeCenter(core.currentIndex - 1);
+          const pCurr = getNodeCenter(core.currentIndex);
+          if (pPrev && pCurr) {
+            const d = makeCurvePath(pPrev, pCurr);
+            activeHtml += `<path d="${d}" fill="none" stroke="rgba(244, 114, 182, 0.28)" stroke-width="4.5" />`;
+            activeHtml += `<path d="${d}" fill="none" stroke="#f472b6" stroke-width="2" class="ptr-dash-active" marker-end="url(#ptrArrowActive)" />`;
+          }
+        } else if (!core.done && core.currentIndex === 0 && core.count > 1) {
+          // On Node 0, preview the first pointer jump to Node 1
+          const p0 = getNodeCenter(0);
+          const p1 = getNodeCenter(1);
+          if (p0 && p1) {
+            const d = makeCurvePath(p0, p1);
+            activeHtml += `<path d="${d}" fill="none" stroke="#a78bfa" stroke-width="1.6" stroke-dasharray="4 4" opacity="0.65" marker-end="url(#ptrArrowActive)" />`;
+          }
+        }
+        activeGroup.innerHTML = activeHtml;
+      }
+
+      /**
+       * Updates the top Global Clock and Live Speedup Comparison Pill.
+       */
+      function renderGlobalHeader() {
+        dom.globalClock.textContent = Math.round(sim.globalCycle).toLocaleString();
+        const bothDone = sim.arr.done && sim.ll.done;
+
+        if (sim.isPlaying && !bothDone) {
+          dom.clockDot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse';
+        } else if (bothDone) {
+          dom.clockDot.className = 'w-1.5 h-1.5 rounded-full bg-blue-400';
+        } else {
+          dom.clockDot.className = 'w-1.5 h-1.5 rounded-full bg-amber-400';
+        }
+
+        const arrCyc = sim.arr.done ? sim.arr.finishCycle : sim.globalCycle;
+        const llCyc = sim.ll.done ? sim.ll.finishCycle : sim.globalCycle;
+
+        if (sim.arr.done && sim.ll.done) {
+          const ratio = (sim.ll.finishCycle / Math.max(1, sim.arr.finishCycle)).toFixed(1);
+          dom.speedupText.textContent = `Array completed ${ratio}× faster (${Math.round(sim.arr.finishCycle)} vs ${Math.round(sim.ll.finishCycle)} cyc)`;
+        } else if (sim.arr.done && !sim.ll.done) {
+          const liveRatio = (llCyc / Math.max(1, sim.arr.finishCycle)).toFixed(1);
+          dom.speedupText.textContent = `Array FINISHED! Already ${liveRatio}× faster — Linked List still stalling (${sim.ll.currentIndex}/${sim.ll.count})`;
+        } else if (sim.ll.currentIndex > 0 && sim.arr.currentIndex > 0) {
+          const arrAvg = arrCyc / sim.arr.currentIndex;
+          const llAvg = llCyc / sim.ll.currentIndex;
+          const ratio = (llAvg / Math.max(1, arrAvg)).toFixed(1);
+          dom.speedupText.textContent = `Live Speedup: Array ${ratio}× faster per element (${sim.arr.currentIndex} vs ${sim.ll.currentIndex} done)`;
+        } else {
+          dom.speedupText.textContent = `Running on synchronized clock · Comparing L1 Cache vs RAM Stalls`;
+        }
+      }
+
+      function renderAll(nowMs) {
+        renderCore(sim.arr, dom.arr, nowMs);
+        renderCore(sim.ll, dom.ll, nowMs);
+        renderLinkedListPointers();
+        renderGlobalHeader();
+      }
+
+      /* =====================================================================
+         8. PLAYBACK, STEPPING, RESET & ANIMATION LOOP (60FPS)
+      ====================================================================== */
+      function updatePlayButtonUI() {
+        if (sim.isPlaying) {
+          dom.iconPlay.classList.add('hidden');
+          dom.iconPause.classList.remove('hidden');
+          dom.playPauseLabel.textContent = 'Pause';
+        } else {
+          dom.iconPlay.classList.remove('hidden');
+          dom.iconPause.classList.add('hidden');
+          dom.playPauseLabel.textContent = (sim.arr.done && sim.ll.done) ? 'Replay' : 'Play';
+        }
+      }
+
+      function resetSimulation(autoPlay = false) {
+        sim.globalCycle = 0;
+        sim.lastFrameTs = null;
+        sim.arr = createCoreState('array', sim.elementCount);
+        sim.ll = createCoreState('list', sim.elementCount);
+
+        buildL1CacheDOM(sim.arr, dom.arr.l1Lines);
+        buildL1CacheDOM(sim.ll, dom.ll.l1Lines);
+        buildRamGridDOM(sim.arr, dom.arr.ramGrid);
+        buildRamGridDOM(sim.ll, dom.ll.ramGrid);
+
+        // Start element 0 access immediately so initial state is informative
+        startNextAccess(sim.arr, 0);
+        startNextAccess(sim.ll, 0);
+
+        sim.isPlaying = autoPlay;
+        updatePlayButtonUI();
+        renderAll(performance.now());
+      }
+
+      /**
+       * Step button: pauses playback and jumps globalCycle to the exact completion
+       * of the very next memory access event on either core.
+       */
+      function stepNextEvent() {
+        sim.isPlaying = false;
+        updatePlayButtonUI();
+
+        if (sim.arr.done && sim.ll.done) {
+          resetSimulation(false);
+          return;
+        }
+
+        const nextArr = (!sim.arr.done && sim.arr.op) ? sim.arr.op.endCycle : Infinity;
+        const nextLl = (!sim.ll.done && sim.ll.op) ? sim.ll.op.endCycle : Infinity;
+        const nextEventCycle = Math.min(nextArr, nextLl);
+
+        if (Number.isFinite(nextEventCycle)) {
+          sim.globalCycle = Math.max(sim.globalCycle, nextEventCycle);
+          advanceCoreToCycle(sim.arr, sim.globalCycle);
+          advanceCoreToCycle(sim.ll, sim.globalCycle);
+          renderAll(performance.now());
+        }
+      }
+
+      /**
+       * Smooth 60fps requestAnimationFrame loop.
+       */
+      function tick(nowMs) {
+        if (sim.isPlaying) {
+          if (sim.lastFrameTs === null) {
+            sim.lastFrameTs = nowMs;
+          }
+          // Cap dt to 50ms so switching browser tabs never causes a giant jump
+          const dtSec = Math.min(0.05, Math.max(0, (nowMs - sim.lastFrameTs) / 1000));
+          sim.lastFrameTs = nowMs;
+
+          const deltaCycles = dtSec * BASE_CYCLES_PER_SEC * sim.speed;
+          sim.globalCycle += deltaCycles;
+
+          advanceCoreToCycle(sim.arr, sim.globalCycle);
+          advanceCoreToCycle(sim.ll, sim.globalCycle);
+
+          if (sim.arr.done && sim.ll.done) {
+            sim.isPlaying = false;
+            updatePlayButtonUI();
+          }
+        } else {
+          sim.lastFrameTs = null;
+        }
+
+        renderAll(nowMs);
+        requestAnimationFrame(tick);
+      }
+
+      /* =====================================================================
+         9. EVENT LISTENERS & INTERACTIVE CONTROLS
+      ====================================================================== */
+      dom.btnPlayPause.addEventListener('click', () => {
+        if (sim.arr.done && sim.ll.done) {
+          resetSimulation(true);
+          return;
+        }
+        sim.isPlaying = !sim.isPlaying;
+        sim.lastFrameTs = null;
+        updatePlayButtonUI();
+      });
+
+      dom.btnStep.addEventListener('click', stepNextEvent);
+
+      dom.btnReset.addEventListener('click', () => {
+        resetSimulation(true);
+      });
+
+      dom.speedSlider.addEventListener('input', (e) => {
+        sim.speed = parseFloat(e.target.value);
+        dom.speedValue.textContent = `${sim.speed.toFixed(2).replace(/\.00$/, '')}×`;
+      });
+
+      dom.countBtns.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const newCount = parseInt(btn.dataset.count, 10);
+          if (newCount === sim.elementCount) return;
+          sim.elementCount = newCount;
+
+          dom.countBtns.forEach(b => {
+            const active = parseInt(b.dataset.count, 10) === newCount;
+            b.className = active
+              ? 'count-btn px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition cursor-pointer bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+              : 'count-btn px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition cursor-pointer text-slate-400 hover:text-white';
+          });
+
+          resetSimulation(true);
+        });
+      });
+
+      dom.btnPrefetchToggle.addEventListener('click', () => {
+        sim.prefetcherEnabled = !sim.prefetcherEnabled;
+        dom.btnPrefetchToggle.setAttribute('aria-checked', String(sim.prefetcherEnabled));
+
+        if (sim.prefetcherEnabled) {
+          dom.btnPrefetchToggle.classList.remove('border-slate-700');
+          dom.btnPrefetchToggle.classList.add('border-cyan-500/45');
+          dom.prefetchTrack.classList.remove('bg-slate-700');
+          dom.prefetchTrack.classList.add('bg-cyan-500/80');
+          dom.prefetchThumb.style.transform = 'translateX(18px)';
+          dom.prefetchLabel.textContent = 'ON';
+          dom.prefetchLabel.className = 'font-mono text-[11px] font-bold text-cyan-300 w-6';
+        } else {
+          dom.btnPrefetchToggle.classList.remove('border-cyan-500/45');
+          dom.btnPrefetchToggle.classList.add('border-slate-700');
+          dom.prefetchTrack.classList.remove('bg-cyan-500/80');
+          dom.prefetchTrack.classList.add('bg-slate-700');
+          dom.prefetchThumb.style.transform = 'translateX(2px)';
+          dom.prefetchLabel.textContent = 'OFF';
+          dom.prefetchLabel.className = 'font-mono text-[11px] font-bold text-slate-500 w-6';
+        }
+
+        // If simulation already finished, auto-replay so user sees the dramatic difference!
+        if (sim.arr.done && sim.ll.done) {
+          resetSimulation(true);
+        }
+      });
+
+      // Collapsible concepts footer
+      let conceptsOpen = true;
+      dom.btnToggleConcepts.addEventListener('click', () => {
+        conceptsOpen = !conceptsOpen;
+        dom.conceptsContent.classList.toggle('hidden', !conceptsOpen);
+        dom.conceptsChevron.classList.toggle('rotate-180', conceptsOpen);
+      });
+
+      // Keyboard shortcuts (Space = Play/Pause, ArrowRight = Step, R = Reset)
+      window.addEventListener('keydown', (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.code === 'Space') {
+          e.preventDefault();
+          dom.btnPlayPause.click();
+        } else if (e.code === 'ArrowRight') {
+          e.preventDefault();
+          stepNextEvent();
+        } else if (e.key === 'r' || e.key === 'R') {
+          e.preventDefault();
+          resetSimulation(true);
+        }
+      });
+
+      // Recompute pointer-chasing SVG coordinates smoothly on window resize
+      window.addEventListener('resize', () => {
+        renderLinkedListPointers();
+      });
+
+      /* =====================================================================
+         10. INITIALIZE & AUTO-START ON LOAD
+      ====================================================================== */
+      window.onload = function () {
+        resetSimulation(false);
+        requestAnimationFrame(tick);
+        // Brief pause on initial frame so user registers the layout, then launch smoothly
+        setTimeout(() => {
+          sim.isPlaying = true;
+          sim.lastFrameTs = null;
+          updatePlayButtonUI();
+        }, 350);
+      };
+    })();
+  </script>
+</body>
+</html>
